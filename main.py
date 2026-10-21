@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, Depends, HTTPException, status
+﻿from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
@@ -34,18 +34,21 @@ class Blockade(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     severity = Column(String)
-    status = Column(String, default="ACTIVE")
+    status = Column(String, default="ACTIVE")  # ACTIVE, ARRIVED, RESOLVED
     notes = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)          # AI Hazard Snapshot
+    clearance_photo = Column(String, nullable=True)    # Officer Proof-of-Clearance Photo
 
 class Notification(Base):
     __tablename__ = "notifications"
     id = Column(Integer, primary_key=True, index=True)
     message = Column(String)
+    image_thumb = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="14.0")
+app = FastAPI(title="நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="15.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,6 +74,7 @@ class BlockadeCreate(BaseModel):
     severity: str
     status: str = "ACTIVE"
     notes: Optional[str] = None
+    image_url: Optional[str] = None
 
 class RegisterRequest(BaseModel):
     name: str
@@ -98,9 +102,13 @@ def seed_initial_data():
             longitude=79.3845,
             severity="CRITICAL",
             status="ACTIVE",
-            notes="Multi-vehicle collision blocking north lane"
+            notes="Multi-vehicle collision blocking north lane",
+            image_url="https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=400&q=80"
         ))
-        db.add(Notification(message="TN POLICE CONTROL ROOM: Naangham Kaaval Nanban Grid Online"))
+        db.add(Notification(
+            message="TN POLICE CONTROL ROOM: Naangham Kaaval Nanban Grid Online",
+            image_thumb=None
+        ))
     db.commit()
     db.close()
 
@@ -108,7 +116,7 @@ def seed_initial_data():
 def get_logo():
     if os.path.exists("logo.png"):
         return FileResponse("logo.png")
-    raise HTTPException(status_code=404, detail="Logo file not found in directory")
+    raise HTTPException(status_code=404, detail="Logo not found")
 
 @app.get("/", response_class=HTMLResponse, tags=["Frontend UI"])
 def serve_frontend():
@@ -131,38 +139,32 @@ def serve_frontend():
             .tn-police-stripe {
                 background: linear-gradient(90deg, #b91c1c 0%, #b91c1c 50%, #1e3a8a 50%, #1e3a8a 100%);
             }
-            .gold-glow {
-                box-shadow: 0 0 35px rgba(217, 119, 6, 0.35);
-            }
+            .gold-glow { box-shadow: 0 0 35px rgba(217, 119, 6, 0.35); }
         </style>
     </head>
     <body class="bg-[#081021] text-slate-100 min-h-screen font-sans">
 
-        <!-- TOP POLICE RIBBON -->
         <div class="h-1.5 w-full tn-police-stripe"></div>
 
-        <!-- AUTH MODAL (LOGIN / REGISTER WITH OTP) -->
+        <!-- LOGIN / REGISTER MODAL -->
         <div id="login-modal" class="fixed inset-0 bg-[#050b16]/92 backdrop-blur-md z-50 flex items-center justify-center p-4">
             <div class="bg-[#0d182e] border-2 border-amber-500/40 rounded-2xl w-full max-w-md p-7 gold-glow relative overflow-hidden">
                 <div class="absolute top-0 left-0 right-0 h-1.5 tn-police-stripe"></div>
 
-                <!-- EXACT ORIGINAL LOGO IMAGE -->
                 <div class="text-center mb-5">
                     <div class="inline-flex items-center justify-center w-28 h-28 mb-2 rounded-full bg-[#070e1c] border-2 border-amber-400 p-1 shadow-2xl relative overflow-hidden">
-                        <img src="/logo.png" alt="Tamil Nadu Police Official Logo" class="w-full h-full object-contain rounded-full">
+                        <img src="/logo.png" alt="TN Police Logo" class="w-full h-full object-contain rounded-full">
                     </div>
                     <div class="text-[11px] font-bold uppercase tracking-widest text-amber-400">தமிழ்நாடு காவல்துறை • Tamil Nadu Police</div>
                     <h1 class="text-xl font-extrabold tracking-tight text-white mt-0.5">நாங்கம் காவல் நண்பன்</h1>
                     <p class="text-xs font-semibold text-amber-300/90">NAANGHAM KAAVAL NANBAN</p>
                 </div>
 
-                <!-- TABS -->
                 <div class="grid grid-cols-2 gap-1 bg-[#070e1c] p-1 rounded-xl mb-5 border border-amber-500/20">
                     <button onclick="switchTab('login')" id="tab-login" class="py-2 text-xs font-bold rounded-lg bg-amber-500 text-slate-950 transition cursor-pointer">Officer Login</button>
                     <button onclick="switchTab('register')" id="tab-register" class="py-2 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition cursor-pointer">New Registration</button>
                 </div>
 
-                <!-- LOGIN FORM -->
                 <form id="form-login" onsubmit="handleLogin(event)" class="space-y-3.5">
                     <div>
                         <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Badge ID / Username</label>
@@ -178,7 +180,6 @@ def serve_frontend():
                     <div id="login-error" class="text-center text-xs text-red-400 hidden"></div>
                 </form>
 
-                <!-- REGISTRATION FORM -->
                 <div id="form-register" class="hidden space-y-3">
                     <div id="reg-step-1" class="space-y-3">
                         <div>
@@ -235,8 +236,8 @@ def serve_frontend():
                         <div class="flex items-center space-x-2">
                             <h2 class="font-extrabold text-base tracking-wide text-white">நாங்கம் காவல் நண்பன்</h2>
                             <span class="text-xs font-bold text-amber-300 bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 rounded">NAANGHAM KAAVAL NANBAN</span>
-                            <span class="text-[11px] text-emerald-400 font-semibold px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded flex items-center gap-1">
-                                <span class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></span> SECURE GRID LIVE
+                            <span id="grid-status-badge" class="text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 transition-all">
+                                <span id="grid-dot" class="w-2 h-2 rounded-full"></span> <span id="grid-text">CONNECTING...</span>
                             </span>
                         </div>
                         <p class="text-[11px] text-slate-400">Tamil Nadu Police Integrated Tactical Command • सत्यमेव जयते</p>
@@ -254,6 +255,7 @@ def serve_frontend():
             </header>
 
             <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 overflow-hidden">
+                <!-- Left: Broadcast & Active Alerts -->
                 <div class="lg:col-span-4 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col overflow-hidden space-y-4 shadow-lg">
                     <form onsubmit="createBlockade(event)" class="bg-[#070e1c] border border-amber-500/25 p-3.5 rounded-lg space-y-2.5">
                         <div class="flex justify-between items-center">
@@ -288,6 +290,7 @@ def serve_frontend():
                     <div id="blockade-list" class="flex-1 overflow-y-auto space-y-2.5 pr-1"></div>
                 </div>
 
+                <!-- Right: Map & Logs -->
                 <div class="lg:col-span-8 flex flex-col gap-5 overflow-hidden">
                     <div class="flex-1 bg-[#0d182e] border border-amber-500/30 rounded-xl p-3 flex flex-col relative overflow-hidden min-h-[300px] shadow-lg">
                         <div class="flex justify-between items-center mb-2 px-1">
@@ -306,8 +309,21 @@ def serve_frontend():
                             <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400"><i class="fa-solid fa-walkie-talkie text-red-400 mr-1.5"></i>TN Police Control Room Wireless & Telemetry Log</h3>
                             <span class="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/30 px-2 py-0.5 rounded">100 Emergency Grid Synced</span>
                         </div>
-                        <div id="notification-box" class="flex-1 bg-[#070e1c] border border-slate-800 rounded-lg p-3 overflow-y-auto space-y-1.5 font-mono text-xs text-slate-200"></div>
+                        <div id="notification-box" class="flex-1 bg-[#070e1c] border border-slate-800 rounded-lg p-3 overflow-y-auto space-y-2 font-mono text-xs text-slate-200"></div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CLEARANCE PHOTO MODAL -->
+        <div id="photo-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-[#0d182e] border border-amber-500/40 rounded-xl max-w-sm w-full p-5 space-y-4">
+                <h3 class="font-bold text-sm text-amber-400 uppercase"><i class="fa-solid fa-camera mr-1"></i> Proof of Clearance Verification</h3>
+                <p class="text-xs text-slate-300">Capture or upload photo of the spot free from congestion to close blockade.</p>
+                <input type="file" id="clearance-file" accept="image/*" class="w-full text-xs text-slate-300 bg-[#070e1c] border border-slate-700 rounded p-2">
+                <div class="flex space-x-2">
+                    <button onclick="submitClearancePhoto()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded text-xs cursor-pointer">Submit & Close</button>
+                    <button onclick="closePhotoModal()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded text-xs cursor-pointer">Cancel</button>
                 </div>
             </div>
         </div>
@@ -317,6 +333,26 @@ def serve_frontend():
             let map, markersLayer;
             let generatedOTP = '';
             let tempRegData = {};
+            let activeResolvingId = null;
+
+            // --- OFFLINE / ONLINE HEARTBEAT MONITOR ---
+            setInterval(async () => {
+                const badge = document.getElementById('grid-status-badge');
+                const dot = document.getElementById('grid-dot');
+                const text = document.getElementById('grid-text');
+                try {
+                    const res = await fetch('/blockades/', { method: 'HEAD' });
+                    if (res.ok) {
+                        badge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
+                        dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
+                        text.innerText = 'SECURE GRID LIVE';
+                    } else { throw new Error(); }
+                } catch (e) {
+                    badge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 bg-red-500/20 border border-red-500/40 text-red-400';
+                    dot.className = 'w-2 h-2 rounded-full bg-red-500';
+                    text.innerText = 'SECURE GRID OFFLINE';
+                }
+            }, 4000);
 
             function switchTab(tab) {
                 const loginTab = document.getElementById('tab-login');
@@ -410,9 +446,7 @@ def serve_frontend():
                 });
             }
 
-            if (authToken) {
-                showDashboard();
-            }
+            if (authToken) { showDashboard(); }
 
             function showDashboard() {
                 document.getElementById('login-modal').classList.add('hidden');
@@ -457,14 +491,12 @@ def serve_frontend():
                     longitude: parseFloat(document.getElementById('lng').value),
                     severity: document.getElementById('severity').value,
                     notes: document.getElementById('notes').value || "TN Police Control Room Directive",
-                    status: "ACTIVE"
+                    status: "ACTIVE",
+                    image_url: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=400&q=80"
                 };
                 await fetch('/blockades/', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + authToken
-                    },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
                     body: JSON.stringify(payload)
                 });
                 document.getElementById('loc_name').value = '';
@@ -496,6 +528,9 @@ def serve_frontend():
                                        b.severity === 'HIGH' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
                                        'bg-blue-600/25 text-blue-300 border-blue-500/40';
 
+                    let imgHtml = b.image_url ? `<img src="${b.image_url}" class="w-full h-24 object-cover rounded border border-slate-700 mt-1 mb-1">` : '';
+                    let clearanceHtml = b.clearance_photo ? `<div class="text-[10px] text-emerald-400 mt-1"><i class="fa-solid fa-camera"></i> Proof Photo Submitted</div>` : '';
+
                     container.innerHTML += `
                         <div class="bg-[#070e1c] border ${isResolved ? 'border-slate-800/40 opacity-60' : 'border-amber-500/25'} p-3 rounded-lg space-y-2">
                             <div class="flex justify-between items-start">
@@ -505,33 +540,29 @@ def serve_frontend():
                                 </div>
                                 <span class="text-[10px] font-bold px-2 py-0.5 border rounded ${badgeColor}">${b.severity}</span>
                             </div>
+                            ${imgHtml}
+                            ${clearanceHtml}
                             <div class="flex justify-between items-center pt-1 border-t border-slate-800/80">
                                 <span class="text-[11px] text-slate-400">Status: <strong class="text-amber-300">${b.status}</strong></span>
                                 <div class="space-x-1.5">
                                     ${b.status === 'ACTIVE' ? `<button onclick="assignUnit(${b.id})" class="bg-blue-700/40 hover:bg-blue-700/60 border border-blue-400/30 text-blue-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Dispatch</button>` : ''}
-                                    ${b.status !== 'RESOLVED' ? `<button onclick="resolveBlockade(${b.id})" class="bg-emerald-700/30 hover:bg-emerald-700/50 border border-emerald-400/30 text-emerald-300 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Clear</button>` : ''}
+                                    ${b.status === 'ASSIGNED' ? `<button onclick="markArrived(${b.id})" class="bg-amber-700/40 hover:bg-amber-700/60 border border-amber-400/30 text-amber-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Arrived</button>` : ''}
+                                    ${b.status === 'ARRIVED' ? `<button onclick="openPhotoModal(${b.id})" class="bg-emerald-700/40 hover:bg-emerald-700/60 border border-emerald-400/30 text-emerald-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Clear & Photo</button>` : ''}
                                 </div>
                             </div>
                         </div>`;
 
                     if (markersLayer && b.latitude && b.longitude) {
-                        const markerColor = isResolved ? '#10b981' : (b.severity === 'CRITICAL' ? '#ef4444' : (b.severity === 'HIGH' ? '#f59e0b' : '#3b82f6'));
+                        const markerColor = isResolved ? '#10b981' : (b.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b');
                         const circle = L.circleMarker([b.latitude, b.longitude], {
-                            radius: 9,
-                            fillColor: markerColor,
-                            color: '#fbbf24',
-                            weight: 2,
-                            opacity: 1,
-                            fillOpacity: 0.9
+                            radius: 9, fillColor: markerColor, color: '#fbbf24', weight: 2, opacity: 1, fillOpacity: 0.9
                         }).bindPopup(`<b>${b.location_name}</b><br>Severity: ${b.severity}<br>Status: ${b.status}`);
                         markersLayer.addLayer(circle);
                     }
                 });
             }
 
-            function focusMap(lat, lng) {
-                if (map) map.setView([lat, lng], 14);
-            }
+            function focusMap(lat, lng) { if (map) map.setView([lat, lng], 14); }
 
             async function loadNotifications() {
                 const res = await fetch('/notifications/', { headers: { 'Authorization': 'Bearer ' + authToken } });
@@ -539,41 +570,56 @@ def serve_frontend():
                 const box = document.getElementById('notification-box');
                 box.innerHTML = '';
                 data.slice().reverse().forEach(n => {
-                    box.innerHTML += `<div><span class="text-amber-400/80">[${new Date(n.created_at).toLocaleTimeString()}]</span> ${n.message}</div>`;
+                    let thumb = n.image_thumb ? `<img src="${n.image_thumb}" class="w-12 h-10 object-cover rounded inline-block ml-2 border border-slate-700">` : '';
+                    box.innerHTML += `<div class="flex items-center justify-between border-b border-slate-800/50 pb-1"><div><span class="text-amber-400/80">[${new Date(n.created_at).toLocaleTimeString()}]</span> ${n.message}</div>${thumb}</div>`;
                 });
             }
 
             async function assignUnit(id) {
-                await fetch('/blockades/' + id + '/assign', {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + authToken }
-                });
-                loadBlockades();
-                loadNotifications();
+                await fetch('/blockades/' + id + '/assign', { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
+                loadBlockades(); loadNotifications();
             }
 
-            async function resolveBlockade(id) {
-                await fetch('/blockades/' + id + '/resolve', {
+            async function markArrived(id) {
+                await fetch('/blockades/' + id + '/arrived', { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
+                loadBlockades(); loadNotifications();
+            }
+
+            function openPhotoModal(id) {
+                activeResolvingId = id;
+                document.getElementById('photo-modal').classList.remove('hidden');
+            }
+
+            function closePhotoModal() {
+                document.getElementById('photo-modal').classList.add('hidden');
+                activeResolvingId = null;
+            }
+
+            async function submitClearancePhoto() {
+                if (!activeResolvingId) return;
+                const fileInput = document.getElementById('clearance-file');
+                const formData = new FormData();
+                if (fileInput.files[0]) {
+                    formData.append('file', fileInput.files[0]);
+                }
+
+                await fetch('/blockades/' + activeResolvingId + '/resolve-photo', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + authToken }
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                    body: formData
                 });
+
+                closePhotoModal();
                 loadBlockades();
                 loadNotifications();
             }
 
             async function clearResolved() {
-                await fetch('/blockades/clear-resolved', {
-                    method: 'DELETE',
-                    headers: { 'Authorization': 'Bearer ' + authToken }
-                });
-                loadBlockades();
-                loadNotifications();
+                await fetch('/blockades/clear-resolved', { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + authToken } });
+                loadBlockades(); loadNotifications();
             }
 
-            function logout() {
-                localStorage.removeItem('token_8002');
-                location.reload();
-            }
+            function logout() { localStorage.removeItem('token_8002'); location.reload(); }
         </script>
     </body>
     </html>
@@ -582,85 +628,76 @@ def serve_frontend():
 @app.post("/auth/register", tags=["Authentication"])
 def register_officer(reg: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter((User.badge_number == reg.badge_number) | (User.username == reg.badge_number)).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Officer with this Badge ID already registered.")
-    
-    new_user = User(
-        username=reg.badge_number,
-        password=reg.password,
-        name=reg.name,
-        email=reg.email,
-        mobile=reg.mobile,
-        badge_number=reg.badge_number
-    )
-    db.add(new_user)
-    db.add(Notification(message=f"[OFFICER REGISTRATION] New officer {reg.name} (Badge: {reg.badge_number}) registered."))
+    if existing: raise HTTPException(status_code=400, detail="Officer already registered.")
+    db.add(User(username=reg.badge_number, password=reg.password, name=reg.name, email=reg.email, mobile=reg.mobile, badge_number=reg.badge_number))
     db.commit()
-    return {"message": "Officer registered successfully"}
+    return {"message": "Success"}
 
 @app.post("/auth/request-otp", tags=["Authentication"])
-def request_otp(data: dict):
-    print(f"\n[TN POLICE OTP DISPATCH] Sent to Email: {data.get('email')} & Mobile: {data.get('mobile')} -> OTP: {data.get('otp')}\n")
-    return {"message": "OTP dispatched successfully"}
+def request_otp(data: dict): return {"message": "OTP dispatched"}
 
 @app.post("/auth/login", tags=["Authentication"])
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == form_data.username).first()
-    if not user or user.password != form_data.password:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect badge ID or password")
+    if not user or user.password != form_data.password: raise HTTPException(status_code=401)
     return {"access_token": user.username, "token_type": "bearer"}
 
 @app.get("/blockades/", tags=["Tactical Blockades"])
-def get_blockades(db: Session = Depends(get_db)):
-    return db.query(Blockade).all()
+def get_blockades(db: Session = Depends(get_db)): return db.query(Blockade).all()
 
 @app.post("/blockades/", tags=["Tactical Blockades"])
 def create_blockade(blockade: BlockadeCreate, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     new_b = Blockade(**blockade.model_dump())
     db.add(new_b)
-    db.add(Notification(message=f"[TN-POLICE ALERT] {blockade.severity} checkpost active at {blockade.location_name}"))
+    db.add(Notification(message=f"[ALERT] Hazard broadcasted at {blockade.location_name}", image_thumb=blockade.image_url))
     db.commit()
-    db.refresh(new_b)
     return new_b
 
 @app.post("/blockades/simulate-ai", tags=["Edge-AI Simulation"])
 def simulate_ai_trigger(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     samples = [
-        ("Mahamaham Tank West Gate", 10.9576, 79.3789, "CRITICAL", "YOLO-v8 Edge Cam: Crowd surge & road obstruction detected"),
-        ("Mayiladuthurai State Highway", 11.1018, 79.6524, "HIGH", "AI Acoustic/Flame Sensor: Emergency vehicle bottleneck"),
-        ("Trichy-Chennai NH-45 Sector 9", 10.8254, 78.6921, "MEDIUM", "Automated Speed Radar: Sudden traffic halt detected")
+        ("Mahamaham Tank West Gate", 10.9576, 79.3789, "CRITICAL", "YOLO-v8 Edge Cam: Crowd surge & road obstruction detected", "https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=400&q=80"),
+        ("Mayiladuthurai State Highway", 11.1018, 79.6524, "HIGH", "AI Acoustic Sensor: Emergency vehicle bottleneck", "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=400&q=80"),
+        ("Trichy-Chennai NH-45 Sector 9", 10.8254, 78.6921, "MEDIUM", "Speed Radar: Sudden traffic halt detected", "https://images.unsplash.com/photo-1519003722824-194d4455a60c?w=400&q=80")
     ]
-    loc, lat, lng, sev, note = random.choice(samples)
-    new_b = Blockade(location_name=loc, latitude=lat, longitude=lng, severity=sev, status="ACTIVE", notes=note)
+    loc, lat, lng, sev, note, img = random.choice(samples)
+    new_b = Blockade(location_name=loc, latitude=lat, longitude=lng, severity=sev, status="ACTIVE", notes=note, image_url=img)
     db.add(new_b)
-    db.add(Notification(message=f"[EDGE-AI WIRELESS] {note} @ {loc}"))
+    db.add(Notification(message=f"[EDGE-AI YOLO] {note} @ {loc}", image_thumb=img))
     db.commit()
     return new_b
 
 @app.post("/blockades/{blockade_id}/assign", tags=["Tactical Blockades"])
 def assign_blockade(blockade_id: int, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
-    if not b:
-        raise HTTPException(status_code=404, detail="Blockade not found")
+    if not b: raise HTTPException(status_code=404)
     b.status = "ASSIGNED"
-    db.add(Notification(message=f"[PATROL DISPATCHED] Unit assigned to {b.location_name}"))
+    db.add(Notification(message=f"[DISPATCH] Unit assigned to {b.location_name}", image_thumb=b.image_url))
     db.commit()
-    return {"message": "Unit assigned", "status": b.status}
+    return {"status": b.status}
 
-@app.post("/blockades/{blockade_id}/resolve", tags=["Tactical Blockades"])
-def resolve_blockade(blockade_id: int, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+@app.post("/blockades/{blockade_id}/arrived", tags=["Tactical Blockades"])
+def mark_arrived(blockade_id: int, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
-    if not b:
-        raise HTTPException(status_code=404, detail="Blockade not found")
-    b.status = "RESOLVED"
-    db.add(Notification(message=f"[SECTOR CLEARED] Traffic restored at {b.location_name}"))
+    if not b: raise HTTPException(status_code=404)
+    b.status = "ARRIVED"
+    db.add(Notification(message=f"[ON SCENE] Officer arrived at {b.location_name}", image_thumb=b.image_url))
     db.commit()
-    return {"message": "Blockade resolved", "status": b.status}
+    return {"status": b.status}
+
+@app.post("/blockades/{blockade_id}/resolve-photo", tags=["Tactical Blockades"])
+async def resolve_with_photo(blockade_id: int, file: Optional[UploadFile] = File(None), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
+    if not b: raise HTTPException(status_code=404)
+    b.status = "RESOLVED"
+    b.clear_photo = "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=400&q=80" # Simulated saved photo url
+    db.add(Notification(message=f"[RESOLVED & VERIFIED] Clear spot photo submitted for {b.location_name}", image_thumb=b.clear_photo))
+    db.commit()
+    return {"message": "Resolved with photo verification"}
 
 @app.delete("/blockades/clear-resolved", tags=["Tactical Blockades"])
 def clear_resolved(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     deleted = db.query(Blockade).filter(Blockade.status == "RESOLVED").delete()
-    db.add(Notification(message=f"[CONTROL LOG] Archived {deleted} cleared checkposts"))
     db.commit()
     return {"deleted": deleted}
 
