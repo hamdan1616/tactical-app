@@ -49,7 +49,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="19.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="20.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -549,6 +549,7 @@ def serve_frontend():
 
             function openPhotoModal(id) {
                 activeResolvingId = id;
+                document.getElementById('clearance-file').value = '';
                 document.getElementById('photo-modal').classList.remove('hidden');
             }
 
@@ -568,15 +569,23 @@ def serve_frontend():
                 const formData = new FormData();
                 formData.append('file', fileInput.files[0]);
 
-                await fetch('/blockades/' + activeResolvingId + '/resolve-photo', {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + authToken },
-                    body: formData
-                });
+                try {
+                    const res = await fetch('/blockades/' + activeResolvingId + '/resolve-photo', {
+                        method: 'POST',
+                        headers: { 'Authorization': 'Bearer ' + authToken },
+                        body: formData
+                    });
 
-                closePhotoModal();
-                loadBlockades();
-                loadNotifications();
+                    if (!res.ok) {
+                        throw new Error('Failed to upload clearance photo');
+                    }
+
+                    closePhotoModal();
+                    loadBlockades();
+                    loadNotifications();
+                } catch (err) {
+                    alert('Error uploading photo: ' + err.message);
+                }
             }
 
             async function clearResolved() {
@@ -674,18 +683,22 @@ def mark_arrived(blockade_id: int, token: str = Depends(oauth2_scheme), db: Sess
 @app.post("/blockades/{blockade_id}/resolve-photo", tags=["Tactical Blockades"])
 async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
-    if not b: raise HTTPException(status_code=404)
+    if not b: 
+        raise HTTPException(status_code=404, detail="Blockade not found")
     
-    file_bytes = await file.read()
-    base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
-    mime_type = file.content_type or "image/jpeg"
-    data_uri = f"data:{mime_type};base64,{base64_encoded}"
+    try:
+        file_bytes = await file.read()
+        base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
+        mime_type = file.content_type or "image/jpeg"
+        data_uri = f"data:{mime_type};base64,{base64_encoded}"
 
-    b.status = "RESOLVED"
-    b.clearance_photo = data_uri
-    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name}", image_thumb=data_uri))
-    db.commit()
-    return {"message": "Resolved with live camera photo verification"}
+        b.status = "RESOLVED"
+        b.clearance_photo = data_uri
+        db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name}", image_thumb=data_uri))
+        db.commit()
+        return {"message": "Resolved with live camera photo verification"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/blockades/clear-resolved", tags=["Tactical Blockades"])
 def clear_resolved(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
