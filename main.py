@@ -37,7 +37,7 @@ class Blockade(Base):
     status = Column(String, default="ACTIVE")  # ACTIVE, ARRIVED, RESOLVED
     notes = Column(String, nullable=True)
     image_url = Column(String, nullable=True)          # AI Hazard Snapshot
-    clearance_photo = Column(String, nullable=True)    # Officer Proof-of-Clearance Photo
+    clearance_photo = Column(String, nullable=True)    # Live Verified Officer Capture
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -48,7 +48,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="15.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="16.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -104,10 +104,6 @@ def seed_initial_data():
             status="ACTIVE",
             notes="Multi-vehicle collision blocking north lane",
             image_url="https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=400&q=80"
-        ))
-        db.add(Notification(
-            message="TN POLICE CONTROL ROOM: Naangham Kaaval Nanban Grid Online",
-            image_thumb=None
         ))
     db.commit()
     db.close()
@@ -255,35 +251,12 @@ def serve_frontend():
             </header>
 
             <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 overflow-hidden">
-                <!-- Left: Broadcast & Active Alerts -->
+                <!-- Left: Active Field Incidents & Patrol Feed (Broadcast option removed for field officers) -->
                 <div class="lg:col-span-4 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col overflow-hidden space-y-4 shadow-lg">
-                    <form onsubmit="createBlockade(event)" class="bg-[#070e1c] border border-amber-500/25 p-3.5 rounded-lg space-y-2.5">
-                        <div class="flex justify-between items-center">
-                            <h4 class="text-xs font-bold uppercase text-amber-400 tracking-wider"><i class="fa-solid fa-bullhorn mr-1 text-red-500"></i>Broadcast Blockade</h4>
-                            <span class="text-[10px] text-slate-400">Click map for coordinates</span>
-                        </div>
-                        <input type="text" id="loc_name" required placeholder="Location (e.g. Kumbakonam Bus Stand)" class="w-full bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white focus:border-amber-400 focus:outline-none">
-                        <div class="grid grid-cols-2 gap-2">
-                            <input type="number" step="any" id="lat" required value="10.9601" placeholder="Latitude" class="bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
-                            <input type="number" step="any" id="lng" required value="79.3845" placeholder="Longitude" class="bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
-                        </div>
-                        <input type="text" id="notes" placeholder="Patrol directive / sensor details" class="w-full bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
-                        <div class="grid grid-cols-2 gap-2">
-                            <select id="severity" class="bg-[#0d182e] border border-slate-700 rounded px-2 py-1.5 text-xs text-amber-300 font-semibold">
-                                <option value="CRITICAL">CRITICAL (Red Alert)</option>
-                                <option value="HIGH">HIGH (Amber Alert)</option>
-                                <option value="MEDIUM">MEDIUM (Patrol Check)</option>
-                            </select>
-                            <button type="submit" class="bg-gradient-to-r from-red-700 to-red-600 hover:from-red-600 hover:to-red-500 border border-amber-400/40 text-white text-xs font-bold rounded py-1.5 transition cursor-pointer">
-                                + Deploy Alert
-                            </button>
-                        </div>
-                    </form>
-
                     <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
-                        <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400">Active Checkposts & Alerts</h3>
+                        <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400">Active Field Incidents & Blockades</h3>
                         <div class="flex items-center space-x-2">
-                            <button onclick="clearResolved()" class="text-[11px] text-slate-400 hover:text-red-400 cursor-pointer">Clear Cleared</button>
+                            <button onclick="clearResolved()" class="text-[11px] text-slate-400 hover:text-red-400 cursor-pointer">Clear Resolved</button>
                             <button onclick="loadBlockades()" class="text-amber-400 hover:text-amber-300 text-xs cursor-pointer"><i class="fa-solid fa-rotate"></i></button>
                         </div>
                     </div>
@@ -294,7 +267,7 @@ def serve_frontend():
                 <div class="lg:col-span-8 flex flex-col gap-5 overflow-hidden">
                     <div class="flex-1 bg-[#0d182e] border border-amber-500/30 rounded-xl p-3 flex flex-col relative overflow-hidden min-h-[300px] shadow-lg">
                         <div class="flex justify-between items-center mb-2 px-1">
-                            <span class="text-xs font-bold uppercase tracking-wider text-amber-400"><i class="fa-solid fa-map-location-dot text-red-500 mr-1.5"></i>TN Police Geo-Radar Grid (Click Map to Select Coordinates)</span>
+                            <span class="text-xs font-bold uppercase tracking-wider text-amber-400"><i class="fa-solid fa-map-location-dot text-red-500 mr-1.5"></i>TN Police Geo-Radar Grid</span>
                             <div class="flex items-center gap-3 text-[11px]">
                                 <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> Critical</span>
                                 <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> High</span>
@@ -315,15 +288,23 @@ def serve_frontend():
             </div>
         </div>
 
-        <!-- CLEARANCE PHOTO MODAL -->
+        <!-- STRICT LIVE CAMERA CLEARANCE PHOTO MODAL -->
         <div id="photo-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-            <div class="bg-[#0d182e] border border-amber-500/40 rounded-xl max-w-sm w-full p-5 space-y-4">
-                <h3 class="font-bold text-sm text-amber-400 uppercase"><i class="fa-solid fa-camera mr-1"></i> Proof of Clearance Verification</h3>
-                <p class="text-xs text-slate-300">Capture or upload photo of the spot free from congestion to close blockade.</p>
-                <input type="file" id="clearance-file" accept="image/*" class="w-full text-xs text-slate-300 bg-[#070e1c] border border-slate-700 rounded p-2">
-                <div class="flex space-x-2">
-                    <button onclick="submitClearancePhoto()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded text-xs cursor-pointer">Submit & Close</button>
-                    <button onclick="closePhotoModal()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded text-xs cursor-pointer">Cancel</button>
+            <div class="bg-[#0d182e] border-2 border-emerald-500/50 rounded-xl max-w-sm w-full p-5 space-y-4">
+                <div class="text-center">
+                    <div class="inline-flex p-3 bg-emerald-500/20 text-emerald-400 rounded-full mb-2 text-xl">
+                        <i class="fa-solid fa-camera-retro"></i>
+                    </div>
+                    <h3 class="font-bold text-sm text-amber-400 uppercase">Mandatory Live Camera Capture</h3>
+                    <p class="text-xs text-slate-300 mt-1">Gallery uploads are disabled to prevent false clearance. Take a live photo of the cleared road.</p>
+                </div>
+                
+                <!-- STRICT LIVE CAMERA ATTRIBUTE -->
+                <input type="file" id="clearance-file" accept="image/*" capture="environment" class="w-full text-xs text-slate-300 bg-[#070e1c] border border-emerald-500/40 rounded p-2.5">
+                
+                <div class="flex space-x-2 pt-2">
+                    <button onclick="submitClearancePhoto()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded text-xs cursor-pointer shadow">Submit Live Proof</button>
+                    <button onclick="closePhotoModal()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2.5 rounded text-xs cursor-pointer">Cancel</button>
                 </div>
             </div>
         </div>
@@ -335,7 +316,6 @@ def serve_frontend():
             let tempRegData = {};
             let activeResolvingId = null;
 
-            // --- OFFLINE / ONLINE HEARTBEAT MONITOR ---
             setInterval(async () => {
                 const badge = document.getElementById('grid-status-badge');
                 const dot = document.getElementById('grid-dot');
@@ -439,11 +419,6 @@ def serve_frontend():
                     attribution: '© OpenStreetMap | நாங்கம் காவல் நண்பன்'
                 }).addTo(map);
                 markersLayer = L.layerGroup().addTo(map);
-
-                map.on('click', function(e) {
-                    document.getElementById('lat').value = e.latlng.lat.toFixed(4);
-                    document.getElementById('lng').value = e.latlng.lng.toFixed(4);
-                });
             }
 
             if (authToken) { showDashboard(); }
@@ -483,28 +458,6 @@ def serve_frontend():
                 }
             }
 
-            async function createBlockade(e) {
-                e.preventDefault();
-                const payload = {
-                    location_name: document.getElementById('loc_name').value,
-                    latitude: parseFloat(document.getElementById('lat').value),
-                    longitude: parseFloat(document.getElementById('lng').value),
-                    severity: document.getElementById('severity').value,
-                    notes: document.getElementById('notes').value || "TN Police Control Room Directive",
-                    status: "ACTIVE",
-                    image_url: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=400&q=80"
-                };
-                await fetch('/blockades/', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
-                    body: JSON.stringify(payload)
-                });
-                document.getElementById('loc_name').value = '';
-                document.getElementById('notes').value = '';
-                loadBlockades();
-                loadNotifications();
-            }
-
             async function simulateAITrigger() {
                 await fetch('/blockades/simulate-ai', {
                     method: 'POST',
@@ -529,13 +482,13 @@ def serve_frontend():
                                        'bg-blue-600/25 text-blue-300 border-blue-500/40';
 
                     let imgHtml = b.image_url ? `<img src="${b.image_url}" class="w-full h-24 object-cover rounded border border-slate-700 mt-1 mb-1">` : '';
-                    let clearanceHtml = b.clearance_photo ? `<div class="text-[10px] text-emerald-400 mt-1"><i class="fa-solid fa-camera"></i> Proof Photo Submitted</div>` : '';
+                    let clearanceHtml = b.clearance_photo ? `<div class="text-[10px] text-emerald-400 mt-1"><i class="fa-solid fa-camera"></i> Live Proof Verified</div>` : '';
 
                     container.innerHTML += `
                         <div class="bg-[#070e1c] border ${isResolved ? 'border-slate-800/40 opacity-60' : 'border-amber-500/25'} p-3 rounded-lg space-y-2">
                             <div class="flex justify-between items-start">
-                                <div onclick="focusMap(${b.latitude}, ${b.longitude})" class="cursor-pointer">
-                                    <h4 class="font-bold text-xs text-white hover:text-amber-400 transition">${b.location_name}</h4>
+                                <div>
+                                    <h4 class="font-bold text-xs text-white">${b.location_name}</h4>
                                     <p class="text-[11px] text-slate-400">${b.notes || ''}</p>
                                 </div>
                                 <span class="text-[10px] font-bold px-2 py-0.5 border rounded ${badgeColor}">${b.severity}</span>
@@ -547,7 +500,7 @@ def serve_frontend():
                                 <div class="space-x-1.5">
                                     ${b.status === 'ACTIVE' ? `<button onclick="assignUnit(${b.id})" class="bg-blue-700/40 hover:bg-blue-700/60 border border-blue-400/30 text-blue-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Dispatch</button>` : ''}
                                     ${b.status === 'ASSIGNED' ? `<button onclick="markArrived(${b.id})" class="bg-amber-700/40 hover:bg-amber-700/60 border border-amber-400/30 text-amber-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Arrived</button>` : ''}
-                                    ${b.status === 'ARRIVED' ? `<button onclick="openPhotoModal(${b.id})" class="bg-emerald-700/40 hover:bg-emerald-700/60 border border-emerald-400/30 text-emerald-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Clear & Photo</button>` : ''}
+                                    ${b.status === 'ARRIVED' ? `<button onclick="openPhotoModal(${b.id})" class="bg-emerald-700/40 hover:bg-emerald-700/60 border border-emerald-400/30 text-emerald-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Live Camera Clear</button>` : ''}
                                 </div>
                             </div>
                         </div>`;
@@ -561,8 +514,6 @@ def serve_frontend():
                     }
                 });
             }
-
-            function focusMap(lat, lng) { if (map) map.setView([lat, lng], 14); }
 
             async function loadNotifications() {
                 const res = await fetch('/notifications/', { headers: { 'Authorization': 'Bearer ' + authToken } });
@@ -598,10 +549,13 @@ def serve_frontend():
             async function submitClearancePhoto() {
                 if (!activeResolvingId) return;
                 const fileInput = document.getElementById('clearance-file');
-                const formData = new FormData();
-                if (fileInput.files[0]) {
-                    formData.append('file', fileInput.files[0]);
+                if (!fileInput.files[0]) {
+                    alert('Please capture a live photo to verify clearance.');
+                    return;
                 }
+
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
 
                 await fetch('/blockades/' + activeResolvingId + '/resolve-photo', {
                     method: 'POST',
@@ -645,14 +599,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 @app.get("/blockades/", tags=["Tactical Blockades"])
 def get_blockades(db: Session = Depends(get_db)): return db.query(Blockade).all()
 
-@app.post("/blockades/", tags=["Tactical Blockades"])
-def create_blockade(blockade: BlockadeCreate, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    new_b = Blockade(**blockade.model_dump())
-    db.add(new_b)
-    db.add(Notification(message=f"[ALERT] Hazard broadcasted at {blockade.location_name}", image_thumb=blockade.image_url))
-    db.commit()
-    return new_b
-
 @app.post("/blockades/simulate-ai", tags=["Edge-AI Simulation"])
 def simulate_ai_trigger(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     samples = [
@@ -686,14 +632,14 @@ def mark_arrived(blockade_id: int, token: str = Depends(oauth2_scheme), db: Sess
     return {"status": b.status}
 
 @app.post("/blockades/{blockade_id}/resolve-photo", tags=["Tactical Blockades"])
-async def resolve_with_photo(blockade_id: int, file: Optional[UploadFile] = File(None), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b: raise HTTPException(status_code=404)
     b.status = "RESOLVED"
-    b.clear_photo = "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=400&q=80" # Simulated saved photo url
-    db.add(Notification(message=f"[RESOLVED & VERIFIED] Clear spot photo submitted for {b.location_name}", image_thumb=b.clear_photo))
+    b.clearance_photo = "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=400&q=80"
+    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name}", image_thumb=b.clearance_photo))
     db.commit()
-    return {"message": "Resolved with photo verification"}
+    return {"message": "Resolved with live camera photo verification"}
 
 @app.delete("/blockades/clear-resolved", tags=["Tactical Blockades"])
 def clear_resolved(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
