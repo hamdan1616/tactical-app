@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 import os
 import random
+import base64
 
 # --- SQLite Database Setup ---
 SQLALCHEMY_DATABASE_URL = "sqlite:///./tactical_8002.db"
@@ -36,8 +37,8 @@ class Blockade(Base):
     severity = Column(String)
     status = Column(String, default="ACTIVE")
     notes = Column(String, nullable=True)
-    image_url = Column(String, nullable=True)
-    clearance_photo = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)       # Can store URL or Base64 Data URI
+    clearance_photo = Column(String, nullable=True) # Stores Live Officer Capture
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -48,7 +49,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="17.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="18.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,6 +60,9 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+# Secret API Key for your YOLO / ESP32 Project Model
+EDGE_API_KEY = "BLU-GUARD-2026"
 
 def get_db():
     db = SessionLocal()
@@ -73,6 +77,15 @@ class RegisterRequest(BaseModel):
     mobile: str
     badge_number: str
     password: str
+
+class EdgeModelTrigger(BaseModel):
+    api_key: str
+    location_name: str
+    latitude: float
+    longitude: float
+    severity: str = "CRITICAL"
+    notes: str
+    image_base64: Optional[str] = None  # Real camera frame from YOLO
 
 @app.on_event("startup")
 def seed_initial_data():
@@ -152,7 +165,6 @@ def serve_frontend():
                     <button onclick="switchTab('register')" id="tab-register" class="py-2 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition cursor-pointer">New Registration</button>
                 </div>
 
-                <!-- BLANK LOGIN FORM (NO DEFAULT VALUES) -->
                 <form id="form-login" onsubmit="handleLogin(event)" class="space-y-3.5">
                     <div>
                         <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Badge ID / Username</label>
@@ -257,7 +269,7 @@ def serve_frontend():
                 <div class="lg:col-span-8 flex flex-col gap-5 overflow-hidden">
                     <div class="flex-1 bg-[#0d182e] border border-amber-500/30 rounded-xl p-3 flex flex-col relative overflow-hidden min-h-[300px] shadow-lg">
                         <div class="flex justify-between items-center mb-2 px-1">
-                            <span class="text-xs font-bold uppercase tracking-wider text-amber-400"><i class="fa-solid fa-map-location-dot text-red-500 mr-1.5"></i>TN Police Geo-Radar Grid</span>
+                            <span class="text-xs font-bold uppercase tracking-wider text-amber-400"><i class="fa-solid fa-map-location-dot text-red-500 mr-1.5"></i>TN Police Geo-Radar Grid (Live Model Sync)</span>
                             <div class="flex items-center gap-3 text-[11px]">
                                 <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> Critical</span>
                                 <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> High</span>
@@ -270,7 +282,7 @@ def serve_frontend():
                     <div class="h-48 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col overflow-hidden shadow-lg">
                         <div class="flex justify-between items-center mb-2">
                             <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400"><i class="fa-solid fa-walkie-talkie text-red-400 mr-1.5"></i>TN Police Control Room Wireless & Telemetry Log</h3>
-                            <span class="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/30 px-2 py-0.5 rounded">100 Emergency Grid Synced</span>
+                            <span class="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/30 px-2 py-0.5 rounded">Live Edge-AI Receiver Ready</span>
                         </div>
                         <div id="notification-box" class="flex-1 bg-[#070e1c] border border-slate-800 rounded-lg p-3 overflow-y-auto space-y-2 font-mono text-xs text-slate-200"></div>
                     </div>
@@ -305,6 +317,7 @@ def serve_frontend():
             let tempRegData = {};
             let activeResolvingId = null;
 
+            // --- AUTO-POLLING FOR LIVE PROJECT MODEL UPDATES & HEARTBEAT ---
             setInterval(async () => {
                 const badge = document.getElementById('grid-status-badge');
                 const dot = document.getElementById('grid-dot');
@@ -315,13 +328,17 @@ def serve_frontend():
                         badge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
                         dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
                         text.innerText = 'SECURE GRID LIVE';
+                        if (authToken && !document.getElementById('dashboard').classList.contains('hidden')) {
+                            loadBlockades();
+                            loadNotifications();
+                        }
                     } else { throw new Error(); }
                 } catch (e) {
                     badge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 bg-red-500/20 border border-red-500/40 text-red-400';
                     dot.className = 'w-2 h-2 rounded-full bg-red-500';
                     text.innerText = 'SECURE GRID OFFLINE';
                 }
-            }, 4000);
+            }, 3500);
 
             function switchTab(tab) {
                 const loginTab = document.getElementById('tab-login');
@@ -463,20 +480,24 @@ def serve_frontend():
 
                 if (markersLayer) markersLayer.clearLayers();
 
-                data.forEach(b => {
+                data.slice().reverse().forEach(b => {
                     const isResolved = b.status === 'RESOLVED';
                     const badgeColor = b.severity === 'CRITICAL' ? 'bg-red-600/25 text-red-300 border-red-500/40' :
                                        b.severity === 'HIGH' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
                                        'bg-blue-600/25 text-blue-300 border-blue-500/40';
 
-                    let imgHtml = b.image_url ? `<img src="${b.image_url}" class="w-full h-24 object-cover rounded border border-slate-700 mt-1 mb-1">` : '';
-                    let clearanceHtml = b.clearance_photo ? `<div class="text-[10px] text-emerald-400 mt-1"><i class="fa-solid fa-camera"></i> Live Proof Verified</div>` : '';
+                    let imgHtml = b.image_url ? `<img src="${b.image_url}" class="w-full h-28 object-cover rounded border border-slate-700 mt-1 mb-1">` : '';
+                    let clearanceHtml = b.clearance_photo ? `
+                        <div class="mt-1 p-1.5 bg-emerald-950/40 border border-emerald-500/30 rounded">
+                            <div class="text-[10px] text-emerald-400 font-bold mb-1"><i class="fa-solid fa-camera"></i> Live Clearance Verified:</div>
+                            <img src="${b.clearance_photo}" class="w-full h-20 object-cover rounded">
+                        </div>` : '';
 
                     container.innerHTML += `
                         <div class="bg-[#070e1c] border ${isResolved ? 'border-slate-800/40 opacity-60' : 'border-amber-500/25'} p-3 rounded-lg space-y-2">
                             <div class="flex justify-between items-start">
-                                <div>
-                                    <h4 class="font-bold text-xs text-white">${b.location_name}</h4>
+                                <div onclick="focusMap(${b.latitude}, ${b.longitude})" class="cursor-pointer">
+                                    <h4 class="font-bold text-xs text-white hover:text-amber-400">${b.location_name}</h4>
                                     <p class="text-[11px] text-slate-400">${b.notes || ''}</p>
                                 </div>
                                 <span class="text-[10px] font-bold px-2 py-0.5 border rounded ${badgeColor}">${b.severity}</span>
@@ -502,6 +523,8 @@ def serve_frontend():
                     }
                 });
             }
+
+            function focusMap(lat, lng) { if (map) map.setView([lat, lng], 14); }
 
             async function loadNotifications() {
                 const res = await fetch('/notifications/', { headers: { 'Authorization': 'Bearer ' + authToken } });
@@ -587,6 +610,34 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 @app.get("/blockades/", tags=["Tactical Blockades"])
 def get_blockades(db: Session = Depends(get_db)): return db.query(Blockade).all()
 
+# --- NEW: LIVE PROJECT MODEL & HARDWARE ENDPOINT ---
+@app.post("/api/edge-trigger", tags=["Live Project Model Integration"])
+def trigger_from_project_model(payload: EdgeModelTrigger, db: Session = Depends(get_db)):
+    if payload.api_key != EDGE_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid Edge API Key")
+    
+    img_data = payload.image_base64
+    if img_data and not img_data.startswith("data:image"):
+        img_data = f"data:image/jpeg;base64,{img_data}"
+
+    new_b = Blockade(
+        location_name=payload.location_name,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        severity=payload.severity,
+        status="ACTIVE",
+        notes=payload.notes,
+        image_url=img_data
+    )
+    db.add(new_b)
+    db.add(Notification(
+        message=f"[LIVE MODEL ALERT] {payload.notes} @ {payload.location_name}",
+        image_thumb=img_data
+    ))
+    db.commit()
+    db.refresh(new_b)
+    return {"status": "success", "incident_id": new_b.id}
+
 @app.post("/blockades/simulate-ai", tags=["Edge-AI Simulation"])
 def simulate_ai_trigger(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     samples = [
@@ -623,9 +674,16 @@ def mark_arrived(blockade_id: int, token: str = Depends(oauth2_scheme), db: Sess
 async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b: raise HTTPException(status_code=404)
+    
+    # Read real live photo captured by the officer and convert to Base64 so it displays permanently
+    file_bytes = await file.read()
+    base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
+    mime_type = file.content_type or "image/jpeg"
+    data_uri = f"data:{mime_type};base64,{base64_encoded}"
+
     b.status = "RESOLVED"
-    b.clearance_photo = "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=400&q=80"
-    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name}", image_thumb=b.clearance_photo))
+    b.clearance_photo = data_uri
+    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name}", image_thumb=data_uri))
     db.commit()
     return {"message": "Resolved with live camera photo verification"}
 
