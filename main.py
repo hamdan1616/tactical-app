@@ -2,7 +2,7 @@
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime
@@ -21,6 +21,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     password = Column(String)
+    name = Column(String)
+    email = Column(String)
+    mobile = Column(String)
     badge_number = Column(String, unique=True, index=True)
 
 class Blockade(Base):
@@ -41,7 +44,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police Tactical Grid", version="11.0")
+app = FastAPI(title="நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="12.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,11 +71,28 @@ class BlockadeCreate(BaseModel):
     status: str = "ACTIVE"
     notes: Optional[str] = None
 
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    mobile: str
+    badge_number: str
+    password: str
+
+# In-memory temporary store for OTP verification during prototype registration
+active_otps = {}
+
 @app.on_event("startup")
 def seed_initial_data():
     db = SessionLocal()
     if not db.query(User).filter(User.username == "test1").first():
-        db.add(User(username="test1", password="password", badge_number="TN-POLICE-007"))
+        db.add(User(
+            username="test1",
+            password="password",
+            name="Inspector Test Officer",
+            email="tnpolice007@tn.gov.in",
+            mobile="9876543210",
+            badge_number="TN-POLICE-007"
+        ))
     if db.query(Blockade).count() == 0:
         db.add(Blockade(
             location_name="Kumbakonam Bypass Junction - Sector 2",
@@ -81,14 +101,6 @@ def seed_initial_data():
             severity="CRITICAL",
             status="ACTIVE",
             notes="Multi-vehicle collision blocking north lane"
-        ))
-        db.add(Blockade(
-            location_name="NH-36 Thanjavur Toll Plaza",
-            latitude=10.7870,
-            longitude=79.1378,
-            severity="HIGH",
-            status="ACTIVE",
-            notes="High-density congestion detected via Edge-AI"
         ))
         db.add(Notification(message="TN POLICE CONTROL ROOM: Naangham Kaaval Nanban Grid Online"))
     db.commit()
@@ -108,10 +120,7 @@ def serve_frontend():
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <style>
-            .leaflet-layer,
-            .leaflet-control-zoom-in,
-            .leaflet-control-zoom-out,
-            .leaflet-control-attribution {
+            .leaflet-layer, .leaflet-control-zoom-in, .leaflet-control-zoom-out, .leaflet-control-attribution {
                 filter: invert(100%) hue-rotate(190deg) brightness(95%) contrast(92%);
             }
             .leaflet-container { background: #070d19; }
@@ -119,83 +128,115 @@ def serve_frontend():
                 background: linear-gradient(90deg, #b91c1c 0%, #b91c1c 50%, #1e3a8a 50%, #1e3a8a 100%);
             }
             .gold-glow {
-                box-shadow: 0 0 25px rgba(217, 119, 6, 0.25);
+                box-shadow: 0 0 30px rgba(217, 119, 6, 0.3);
             }
         </style>
     </head>
-    <body class="bg-[#081021] text-slate-100 min-h-screen font-sans selection:bg-amber-500 selection:text-slate-950">
+    <body class="bg-[#081021] text-slate-100 min-h-screen font-sans">
 
-        <!-- TOP OFFICIAL TN POLICE RIBBON -->
+        <!-- TOP POLICE RIBBON -->
         <div class="h-1.5 w-full tn-police-stripe"></div>
 
-        <!-- LOGIN MODAL -->
-        <div id="login-modal" class="fixed inset-0 bg-[#050b16]/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
-            <div class="bg-[#0d182e] border-2 border-amber-500/40 rounded-2xl w-full max-w-md p-8 gold-glow relative overflow-hidden">
+        <!-- AUTH MODAL (LOGIN / REGISTER WITH OTP) -->
+        <div id="login-modal" class="fixed inset-0 bg-[#050b16]/92 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div class="bg-[#0d182e] border-2 border-amber-500/40 rounded-2xl w-full max-w-md p-7 gold-glow relative overflow-hidden">
                 <div class="absolute top-0 left-0 right-0 h-1.5 tn-police-stripe"></div>
 
-                <div class="text-center mb-6">
-                    <!-- TAMIL NADU POLICE CREST SVG -->
-                    <div class="inline-flex items-center justify-center w-24 h-24 mb-3 relative">
-                        <svg viewBox="0 0 120 140" class="w-full h-full drop-shadow-[0_4px_10px_rgba(245,158,11,0.4)]">
-                            <!-- Outer Gold Shield -->
-                            <path d="M60 5 L110 25 L110 65 C110 100 60 130 60 135 C60 130 10 100 10 65 L10 25 Z" fill="#1e3a8a" stroke="#f59e0b" stroke-width="4"/>
-                            <!-- Inner Crimson & Navy Split -->
-                            <path d="M60 12 L103 29 L103 65 C103 95 60 122 60 127 Z" fill="#991b1b"/>
-                            <path d="M60 12 L17 29 L17 65 C17 95 60 122 60 127 Z" fill="#172554"/>
-                            <!-- Gopuram / Lion Pillar Gold Emblem Center -->
-                            <polygon points="60,24 72,58 48,58" fill="#fbbf24"/>
-                            <rect x="46" y="60" width="28" height="6" rx="2" fill="#f59e0b"/>
-                            <circle cx="60" cy="75" r="7" fill="none" stroke="#fbbf24" stroke-width="2.5"/>
-                            <!-- Bottom Ribbon -->
-                            <path d="M25 102 Q60 116 95 102 L99 112 Q60 126 21 112 Z" fill="#fbbf24"/>
-                            <text x="60" y="112" font-size="7.5" font-weight="bold" fill="#0f172a" text-anchor="middle">வாய்மையே வெல்லும்</text>
-                        </svg>
+                <!-- EMBLEM LOGO -->
+                <div class="text-center mb-5">
+                    <div class="inline-flex items-center justify-center w-24 h-24 mb-2 rounded-full bg-[#070e1c] border-2 border-amber-500/50 p-1.5 shadow-lg">
+                        <img src="https://i.ibb.co/h15G272/image-609a59.png" alt="Tamil Nadu Police Emblem" class="w-full h-full object-contain rounded-full" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/e/e0/TamilNaduPoliceEmblem.png'">
                     </div>
-
-                    <div class="text-xs font-bold uppercase tracking-widest text-amber-400 mb-1">தமிழ்நாடு காவல்துறை • Tamil Nadu Police</div>
-                    <h1 class="text-2xl font-extrabold tracking-tight text-white">நாங்கம் காவல் நண்பன்</h1>
-                    <p class="text-sm font-semibold text-amber-300/90 mt-0.5">NAANGHAM KAAVAL NANBAN</p>
-                    <p class="text-xs text-slate-400 mt-1">State Tactical Command & AI Traffic Grid</p>
+                    <div class="text-[11px] font-bold uppercase tracking-widest text-amber-400">தமிழ்நாடு காவல்துறை • Tamil Nadu Police</div>
+                    <h1 class="text-xl font-extrabold tracking-tight text-white mt-0.5">நாங்கம் காவல் நண்பன்</h1>
+                    <p class="text-xs font-semibold text-amber-300/90">NAANGHAM KAAVAL NANBAN</p>
                 </div>
 
-                <form onsubmit="handleLogin(event)" class="space-y-4">
+                <!-- TABS FOR LOGIN / REGISTER -->
+                <div class="grid grid-cols-2 gap-1 bg-[#070e1c] p-1 rounded-xl mb-5 border border-amber-500/20">
+                    <button onclick="switchTab('login')" id="tab-login" class="py-2 text-xs font-bold rounded-lg bg-amber-500 text-slate-950 transition cursor-pointer">Officer Login</button>
+                    <button onclick="switchTab('register')" id="tab-register" class="py-2 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition cursor-pointer">New Registration</button>
+                </div>
+
+                <!-- LOGIN FORM -->
+                <form id="form-login" onsubmit="handleLogin(event)" class="space-y-3.5">
                     <div>
-                        <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Officer Badge ID / Username</label>
-                        <input type="text" id="username" required value="test1" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400">
+                        <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Badge ID / Username</label>
+                        <input type="text" id="login-username" required value="test1" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400">
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Control Room Password</label>
-                        <input type="password" id="password" required value="password" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400">
+                        <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Password</label>
+                        <input type="password" id="login-password" required value="password" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400">
                     </div>
-                    <button type="submit" class="w-full bg-gradient-to-r from-red-700 via-red-600 to-blue-800 hover:from-red-600 hover:to-blue-700 border border-amber-400/50 text-white font-bold py-2.5 rounded-lg transition text-sm cursor-pointer shadow-lg">
-                        <i class="fa-solid fa-unlock-keyhole mr-1.5 text-amber-300"></i> Authenticate & Enter Command Grid
+                    <button type="submit" class="w-full bg-gradient-to-r from-red-700 to-blue-800 hover:from-red-600 hover:to-blue-700 border border-amber-400/50 text-white font-bold py-2.5 rounded-lg transition text-sm cursor-pointer shadow-md">
+                        <i class="fa-solid fa-shield-halved mr-1 text-amber-300"></i> Secure Login
                     </button>
+                    <div id="login-error" class="text-center text-xs text-red-400 hidden"></div>
                 </form>
-                <div id="login-error" class="mt-4 text-center text-sm text-red-400 hidden"></div>
+
+                <!-- REGISTRATION & OTP FORM -->
+                <div id="form-register" class="hidden space-y-3">
+                    <div id="reg-step-1" class="space-y-3">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-0.5">Officer Full Name</label>
+                            <input type="text" id="reg-name" placeholder="e.g. Inspector K. Murugan" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-0.5">Badge ID</label>
+                                <input type="text" id="reg-badge" placeholder="TN-POLICE-99" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-0.5">Mobile Number</label>
+                                <input type="tel" id="reg-mobile" placeholder="9876543210" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-0.5">Official Email</label>
+                            <input type="email" id="reg-email" placeholder="officer@tn.gov.in" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-0.5">Set Password</label>
+                            <input type="password" id="reg-password" placeholder="••••••••" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                        </div>
+                        <button onclick="requestOTP()" class="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-2 rounded-lg transition text-xs cursor-pointer shadow">
+                            <i class="fa-solid fa-paper-plane mr-1"></i> Send Verification OTP (Mail/SMS)
+                        </button>
+                    </div>
+
+                    <!-- STEP 2: ENTER OTP -->
+                    <div id="reg-step-2" class="hidden space-y-3">
+                        <div class="bg-blue-950/40 border border-blue-500/30 p-2.5 rounded-lg text-center">
+                            <p class="text-xs text-blue-300">OTP dispatched to registered mobile & email.</p>
+                            <p id="otp-hint" class="text-[11px] text-amber-400 font-mono mt-1 font-bold"></p>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-amber-400 uppercase mb-1 text-center">Enter 6-Digit OTP Code</label>
+                            <input type="text" id="reg-otp" maxlength="6" placeholder="123456" class="w-full text-center tracking-widest font-mono bg-[#070e1c] border border-amber-500/50 rounded-lg px-3 py-2 text-base text-amber-300">
+                        </div>
+                        <button onclick="verifyAndRegister()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition text-xs cursor-pointer shadow">
+                            <i class="fa-solid fa-check-circle mr-1"></i> Verify OTP & Create Account
+                        </button>
+                    </div>
+                    <div id="reg-error" class="text-center text-xs text-red-400 hidden"></div>
+                </div>
             </div>
         </div>
 
-        <!-- MAIN DASHBOARD -->
+        <!-- DASHBOARD -->
         <div id="dashboard" class="hidden flex flex-col h-[calc(100vh-6px)]">
             <header class="bg-[#0d182e] border-b-2 border-amber-500/40 px-6 py-2.5 flex justify-between items-center shadow-md">
                 <div class="flex items-center space-x-3.5">
-                    <!-- Mini TN Police Crest in Header -->
-                    <svg viewBox="0 0 120 140" class="w-11 h-11 shrink-0">
-                        <path d="M60 5 L110 25 L110 65 C110 100 60 130 60 135 C60 130 10 100 10 65 L10 25 Z" fill="#1e3a8a" stroke="#f59e0b" stroke-width="6"/>
-                        <path d="M60 12 L103 29 L103 65 C103 95 60 122 60 127 Z" fill="#991b1b"/>
-                        <path d="M60 12 L17 29 L17 65 C17 95 60 122 60 127 Z" fill="#172554"/>
-                        <polygon points="60,26 74,62 46,62" fill="#fbbf24"/>
-                        <circle cx="60" cy="78" r="8" fill="#fbbf24"/>
-                    </svg>
+                    <img src="https://i.ibb.co/h15G272/image-609a59.png" class="w-10 h-10 object-contain rounded-full border border-amber-500/40" alt="Emblem">
                     <div>
                         <div class="flex items-center space-x-2">
-                            <h2 class="font-extrabold text-lg tracking-wide text-white">நாங்கம் காவல் நண்பன்</h2>
+                            <h2 class="font-extrabold text-base tracking-wide text-white">நாங்கம் காவல் நண்பன்</h2>
                             <span class="text-xs font-bold text-amber-300 bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 rounded">NAANGHAM KAAVAL NANBAN</span>
                             <span class="text-[11px] text-emerald-400 font-semibold px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded flex items-center gap-1">
-                                <span class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></span> TN POLICE GRID LIVE
+                                <span class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></span> SECURE GRID LIVE
                             </span>
                         </div>
-                        <p class="text-[11px] text-slate-400">Tamil Nadu Police Integrated Tactical & Edge-AI Traffic Command System • सत्यमेव जयते</p>
+                        <p class="text-[11px] text-slate-400">Tamil Nadu Police Integrated Tactical Command • सत्यमेव जयते</p>
                     </div>
                 </div>
 
@@ -210,19 +251,18 @@ def serve_frontend():
             </header>
 
             <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 overflow-hidden">
-                <!-- Left Column: Broadcast & Active Checkpoints -->
                 <div class="lg:col-span-4 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col overflow-hidden space-y-4 shadow-lg">
                     <form onsubmit="createBlockade(event)" class="bg-[#070e1c] border border-amber-500/25 p-3.5 rounded-lg space-y-2.5">
                         <div class="flex justify-between items-center">
-                            <h4 class="text-xs font-bold uppercase text-amber-400 tracking-wider"><i class="fa-solid fa-bullhorn mr-1 text-red-500"></i>Broadcast Tactical Blockade</h4>
-                            <span class="text-[10px] text-slate-400">Click map for Lat/Lng</span>
+                            <h4 class="text-xs font-bold uppercase text-amber-400 tracking-wider"><i class="fa-solid fa-bullhorn mr-1 text-red-500"></i>Broadcast Blockade</h4>
+                            <span class="text-[10px] text-slate-400">Click map for coordinates</span>
                         </div>
-                        <input type="text" id="loc_name" required placeholder="Checkpost / Location (e.g. Kumbakonam Bus Stand)" class="w-full bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white focus:border-amber-400 focus:outline-none">
+                        <input type="text" id="loc_name" required placeholder="Location (e.g. Kumbakonam Bus Stand)" class="w-full bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white focus:border-amber-400 focus:outline-none">
                         <div class="grid grid-cols-2 gap-2">
                             <input type="number" step="any" id="lat" required value="10.9601" placeholder="Latitude" class="bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
                             <input type="number" step="any" id="lng" required value="79.3845" placeholder="Longitude" class="bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
                         </div>
-                        <input type="text" id="notes" placeholder="Control room directive / patrol notes" class="w-full bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
+                        <input type="text" id="notes" placeholder="Patrol directive / sensor details" class="w-full bg-[#0d182e] border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
                         <div class="grid grid-cols-2 gap-2">
                             <select id="severity" class="bg-[#0d182e] border border-slate-700 rounded px-2 py-1.5 text-xs text-amber-300 font-semibold">
                                 <option value="CRITICAL">CRITICAL (Red Alert)</option>
@@ -236,20 +276,19 @@ def serve_frontend():
                     </form>
 
                     <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
-                        <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400">Active Police Checkposts & Alerts</h3>
+                        <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400">Active Checkposts & Alerts</h3>
                         <div class="flex items-center space-x-2">
-                            <button onclick="clearResolved()" class="text-[11px] text-slate-400 hover:text-red-400 cursor-pointer">Clear Resolved</button>
+                            <button onclick="clearResolved()" class="text-[11px] text-slate-400 hover:text-red-400 cursor-pointer">Clear Cleared</button>
                             <button onclick="loadBlockades()" class="text-amber-400 hover:text-amber-300 text-xs cursor-pointer"><i class="fa-solid fa-rotate"></i></button>
                         </div>
                     </div>
                     <div id="blockade-list" class="flex-1 overflow-y-auto space-y-2.5 pr-1"></div>
                 </div>
 
-                <!-- Right Column: Map & Control Room Wireless Log -->
                 <div class="lg:col-span-8 flex flex-col gap-5 overflow-hidden">
                     <div class="flex-1 bg-[#0d182e] border border-amber-500/30 rounded-xl p-3 flex flex-col relative overflow-hidden min-h-[300px] shadow-lg">
                         <div class="flex justify-between items-center mb-2 px-1">
-                            <span class="text-xs font-bold uppercase tracking-wider text-amber-400"><i class="fa-solid fa-map-location-dot text-red-500 mr-1.5"></i>Tamil Nadu Police Geo-Radar Grid (Click Map to Select Sector Coordinates)</span>
+                            <span class="text-xs font-bold uppercase tracking-wider text-amber-400"><i class="fa-solid fa-map-location-dot text-red-500 mr-1.5"></i>TN Police Geo-Radar Grid (Click Map to Select Coordinates)</span>
                             <div class="flex items-center gap-3 text-[11px]">
                                 <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> Critical</span>
                                 <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> High</span>
@@ -273,13 +312,93 @@ def serve_frontend():
         <script>
             let authToken = localStorage.getItem('token_8002') || '';
             let map, markersLayer;
+            let generatedOTP = '';
+            let tempRegData = {};
+
+            function switchTab(tab) {
+                const loginTab = document.getElementById('tab-login');
+                const regTab = document.getElementById('tab-register');
+                const loginForm = document.getElementById('form-login');
+                const regForm = document.getElementById('form-register');
+
+                if (tab === 'login') {
+                    loginTab.className = 'py-2 text-xs font-bold rounded-lg bg-amber-500 text-slate-950 transition cursor-pointer';
+                    regTab.className = 'py-2 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition cursor-pointer';
+                    loginForm.classList.remove('hidden');
+                    regForm.classList.add('hidden');
+                } else {
+                    regTab.className = 'py-2 text-xs font-bold rounded-lg bg-amber-500 text-slate-950 transition cursor-pointer';
+                    loginTab.className = 'py-2 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition cursor-pointer';
+                    regForm.classList.remove('hidden');
+                    loginForm.classList.add('hidden');
+                }
+            }
+
+            async function requestOTP() {
+                const name = document.getElementById('reg-name').value;
+                const badge = document.getElementById('reg-badge').value;
+                const mobile = document.getElementById('reg-mobile').value;
+                const email = document.getElementById('reg-email').value;
+                const password = document.getElementById('reg-password').value;
+                const errDiv = document.getElementById('reg-error');
+
+                if (!name || !badge || !mobile || !email || !password) {
+                    errDiv.innerText = 'Please fill in all officer registration fields.';
+                    errDiv.classList.remove('hidden');
+                    return;
+                }
+                errDiv.classList.add('hidden');
+
+                tempRegData = { name, badge_number: badge, mobile, email, password };
+                generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
+
+                // Call backend to trigger dispatch simulation
+                await fetch('/auth/request-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, mobile, otp: generatedOTP })
+                });
+
+                document.getElementById('reg-step-1').classList.add('hidden');
+                document.getElementById('reg-step-2').classList.remove('hidden');
+                document.getElementById('otp-hint').innerText = `[SIMULATED SMS/MAIL OTP]: ${generatedOTP}`;
+            }
+
+            async function verifyAndRegister() {
+                const enteredOTP = document.getElementById('reg-otp').value;
+                const errDiv = document.getElementById('reg-error');
+
+                if (enteredOTP !== generatedOTP) {
+                    errDiv.innerText = 'Invalid OTP code. Please check simulation hint.';
+                    errDiv.classList.remove('hidden');
+                    return;
+                }
+
+                const res = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(tempRegData)
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    errDiv.innerText = err.detail || 'Registration failed.';
+                    errDiv.classList.remove('hidden');
+                    return;
+                }
+
+                alert('Officer account registered successfully! Please log in.');
+                switchTab('login');
+                document.getElementById('login-username').value = tempRegData.badge_number;
+                document.getElementById('login-password').value = tempRegData.password;
+            }
 
             function initMap() {
                 if (map) return;
                 map = L.map('map').setView([10.9601, 79.3845], 10);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                     maxZoom: 19,
-                    attribution: '© OpenStreetMap | நாங்கம் காவல் நண்பன் - TN Police'
+                    attribution: '© OpenStreetMap | நாங்கம் காவல் நண்பன்'
                 }).addTo(map);
                 markersLayer = L.layerGroup().addTo(map);
 
@@ -296,7 +415,6 @@ def serve_frontend():
             function showDashboard() {
                 document.getElementById('login-modal').classList.add('hidden');
                 document.getElementById('dashboard').classList.remove('hidden');
-                document.getElementById('user-badge').innerText = 'TN-POLICE-007 (Inspector)';
                 setTimeout(() => {
                     initMap();
                     loadBlockades();
@@ -306,8 +424,8 @@ def serve_frontend():
 
             async function handleLogin(e) {
                 e.preventDefault();
-                const username = document.getElementById('username').value;
-                const password = document.getElementById('password').value;
+                const username = document.getElementById('login-username').value;
+                const password = document.getElementById('login-password').value;
                 const formData = new URLSearchParams({ username, password });
 
                 try {
@@ -320,10 +438,11 @@ def serve_frontend():
                     const data = await res.json();
                     authToken = data.access_token;
                     localStorage.setItem('token_8002', authToken);
+                    document.getElementById('user-badge').innerText = 'Officer: ' + username;
                     showDashboard();
                 } catch (err) {
                     const errDiv = document.getElementById('login-error');
-                    errDiv.innerText = 'Incorrect username or password.';
+                    errDiv.innerText = 'Incorrect badge ID or password.';
                     errDiv.classList.remove('hidden');
                 }
             }
@@ -387,8 +506,8 @@ def serve_frontend():
                             <div class="flex justify-between items-center pt-1 border-t border-slate-800/80">
                                 <span class="text-[11px] text-slate-400">Status: <strong class="text-amber-300">${b.status}</strong></span>
                                 <div class="space-x-1.5">
-                                    ${b.status === 'ACTIVE' ? `<button onclick="assignUnit(${b.id})" class="bg-blue-700/40 hover:bg-blue-700/60 border border-blue-400/30 text-blue-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Dispatch Patrol</button>` : ''}
-                                    ${b.status !== 'RESOLVED' ? `<button onclick="resolveBlockade(${b.id})" class="bg-emerald-700/30 hover:bg-emerald-700/50 border border-emerald-400/30 text-emerald-300 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Mark Cleared</button>` : ''}
+                                    ${b.status === 'ACTIVE' ? `<button onclick="assignUnit(${b.id})" class="bg-blue-700/40 hover:bg-blue-700/60 border border-blue-400/30 text-blue-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Dispatch</button>` : ''}
+                                    ${b.status !== 'RESOLVED' ? `<button onclick="resolveBlockade(${b.id})" class="bg-emerald-700/30 hover:bg-emerald-700/50 border border-emerald-400/30 text-emerald-300 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Clear</button>` : ''}
                                 </div>
                             </div>
                         </div>`;
@@ -402,7 +521,7 @@ def serve_frontend():
                             weight: 2,
                             opacity: 1,
                             fillOpacity: 0.9
-                        }).bindPopup(`<b>${b.location_name}</b><br>Severity: ${b.severity}<br>Status: ${b.status}<br><small>${b.notes || ''}</small>`);
+                        }).bindPopup(`<b>${b.location_name}</b><br>Severity: ${b.severity}<br>Status: ${b.status}`);
                         markersLayer.addLayer(circle);
                     }
                 });
@@ -458,11 +577,36 @@ def serve_frontend():
     </html>
     """
 
+@app.post("/auth/register", tags=["Authentication"])
+def register_officer(reg: RegisterRequest, db: Session = Depends(get_db)):
+    existing = db.query(User).filter((User.badge_number == reg.badge_number) | (User.username == reg.badge_number)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Officer with this Badge ID already registered.")
+    
+    new_user = User(
+        username=reg.badge_number,
+        password=reg.password,
+        name=reg.name,
+        email=reg.email,
+        mobile=reg.mobile,
+        badge_number=reg.badge_number
+    )
+    db.add(new_user)
+    db.add(Notification(message=f"[OFFICER REGISTRATION] New officer {reg.name} (Badge: {reg.badge_number}) registered."))
+    db.commit()
+    return {"message": "Officer registered successfully"}
+
+@app.post("/auth/request-otp", tags=["Authentication"])
+def request_otp(data: dict):
+    # Simulates sending an SMS & Mail OTP
+    print(f"\n[TN POLICE OTP DISPATCH] Sent to Email: {data.get('email')} & Mobile: {data.get('mobile')} -> OTP: {data.get('otp')}\n")
+    return {"message": "OTP dispatched successfully"}
+
 @app.post("/auth/login", tags=["Authentication"])
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or user.password != form_data.password:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect badge ID or password")
     return {"access_token": user.username, "token_type": "bearer"}
 
 @app.get("/blockades/", tags=["Tactical Blockades"])
@@ -483,8 +627,7 @@ def simulate_ai_trigger(token: str = Depends(oauth2_scheme), db: Session = Depen
     samples = [
         ("Mahamaham Tank West Gate", 10.9576, 79.3789, "CRITICAL", "YOLO-v8 Edge Cam: Crowd surge & road obstruction detected"),
         ("Mayiladuthurai State Highway", 11.1018, 79.6524, "HIGH", "AI Acoustic/Flame Sensor: Emergency vehicle bottleneck"),
-        ("Trichy-Chennai NH-45 Sector 9", 10.8254, 78.6921, "MEDIUM", "Automated Speed Radar: Sudden traffic halt detected"),
-        ("Darasuram Airavatesvara Crossroad", 10.9482, 79.3567, "HIGH", "Edge Crosswalk Node: Pedestrian hazard alert")
+        ("Trichy-Chennai NH-45 Sector 9", 10.8254, 78.6921, "MEDIUM", "Automated Speed Radar: Sudden traffic halt detected")
     ]
     loc, lat, lng, sev, note = random.choice(samples)
     new_b = Blockade(location_name=loc, latitude=lat, longitude=lng, severity=sev, status="ACTIVE", notes=note)
@@ -499,7 +642,7 @@ def assign_blockade(blockade_id: int, token: str = Depends(oauth2_scheme), db: S
     if not b:
         raise HTTPException(status_code=404, detail="Blockade not found")
     b.status = "ASSIGNED"
-    db.add(Notification(message=f"[PATROL DISPATCHED] Highway mobile unit assigned to {b.location_name}"))
+    db.add(Notification(message=f"[PATROL DISPATCHED] Unit assigned to {b.location_name}"))
     db.commit()
     return {"message": "Unit assigned", "status": b.status}
 
