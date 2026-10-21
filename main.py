@@ -1,12 +1,13 @@
 ﻿from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime
 from typing import Optional
+import os
 import random
 
 # --- SQLite Database Setup ---
@@ -44,7 +45,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="13.0")
+app = FastAPI(title="நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="14.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,8 +79,6 @@ class RegisterRequest(BaseModel):
     badge_number: str
     password: str
 
-active_otps = {}
-
 @app.on_event("startup")
 def seed_initial_data():
     db = SessionLocal()
@@ -104,6 +103,12 @@ def seed_initial_data():
         db.add(Notification(message="TN POLICE CONTROL ROOM: Naangham Kaaval Nanban Grid Online"))
     db.commit()
     db.close()
+
+@app.get("/logo.png", include_in_schema=False)
+def get_logo():
+    if os.path.exists("logo.png"):
+        return FileResponse("logo.png")
+    raise HTTPException(status_code=404, detail="Logo file not found in directory")
 
 @app.get("/", response_class=HTMLResponse, tags=["Frontend UI"])
 def serve_frontend():
@@ -141,29 +146,10 @@ def serve_frontend():
             <div class="bg-[#0d182e] border-2 border-amber-500/40 rounded-2xl w-full max-w-md p-7 gold-glow relative overflow-hidden">
                 <div class="absolute top-0 left-0 right-0 h-1.5 tn-police-stripe"></div>
 
-                <!-- OFFICIAL TAMIL NADU POLICE CREST -->
+                <!-- EXACT ORIGINAL LOGO IMAGE -->
                 <div class="text-center mb-5">
-                    <div class="inline-flex items-center justify-center w-26 h-26 mb-2 rounded-full bg-[#1e3a8a] border-2 border-amber-400 p-1 shadow-2xl relative overflow-hidden">
-                        <!-- Precise SVG Recreation of TN Police Emblem matching user uploaded badge -->
-                        <svg viewBox="0 0 200 200" class="w-full h-full">
-                            <circle cx="100" cy="100" r="96" fill="#172554" stroke="#fbbf24" stroke-width="4"/>
-                            <!-- Outer Ring Text Path simulation -->
-                            <path id="ring" d="M 30,100 a 70,70 0 1,1 140,0" fill="none"/>
-                            <text font-size="14.5" font-weight="bold" fill="#ffffff" letter-spacing="2.5"><textPath href="#ring" startOffset="50%" text-anchor="middle">TAMIL NADU POLICE</textPath></text>
-                            <!-- Gopuram Temple Tower Center -->
-                            <polygon points="100,50 125,120 75,120" fill="#fbbf24" stroke="#d97706" stroke-width="2"/>
-                            <line x1="85" y1="70" x2="115" y2="70" stroke="#172554" stroke-width="2"/>
-                            <line x1="80" y1="90" x2="120" y2="90" stroke="#172554" stroke-width="2"/>
-                            <line x1="77" y1="110" x2="123" y2="110" stroke="#172554" stroke-width="2"/>
-                            <!-- Lion Capital Emblem at Bottom -->
-                            <rect x="85" y="125" width="30" height="22" rx="3" fill="#facc15"/>
-                            <rect x="75" y="148" width="50" height="14" fill="#ffffff"/>
-                            <rect x="80" y="148" width="10" height="14" fill="#ff9933"/>
-                            <rect x="110" y="148" width="10" height="14" fill="#138808"/>
-                            <!-- Truth Alone Triumphs Ribbon -->
-                            <path d="M 40,172 Q 100,192 160,172 L 150,188 Q 100,205 50,188 Z" fill="#b91c1c" stroke="#fbbf24" stroke-width="1.5"/>
-                            <text x="100" y="184" font-size="9" font-weight="bold" fill="#ffffff" text-anchor="middle">TRUTH ALONE TRIUMPHS</text>
-                        </svg>
+                    <div class="inline-flex items-center justify-center w-28 h-28 mb-2 rounded-full bg-[#070e1c] border-2 border-amber-400 p-1 shadow-2xl relative overflow-hidden">
+                        <img src="/logo.png" alt="Tamil Nadu Police Official Logo" class="w-full h-full object-contain rounded-full">
                     </div>
                     <div class="text-[11px] font-bold uppercase tracking-widest text-amber-400">தமிழ்நாடு காவல்துறை • Tamil Nadu Police</div>
                     <h1 class="text-xl font-extrabold tracking-tight text-white mt-0.5">நாங்கம் காவல் நண்பன்</h1>
@@ -244,13 +230,7 @@ def serve_frontend():
         <div id="dashboard" class="hidden flex flex-col h-[calc(100vh-6px)]">
             <header class="bg-[#0d182e] border-b-2 border-amber-500/40 px-6 py-2.5 flex justify-between items-center shadow-md">
                 <div class="flex items-center space-x-3.5">
-                    <div class="w-10 h-10 rounded-full bg-[#1e3a8a] border border-amber-400 flex items-center justify-center p-0.5 shrink-0">
-                        <svg viewBox="0 0 200 200" class="w-full h-full">
-                            <circle cx="100" cy="100" r="96" fill="#172554" stroke="#fbbf24" stroke-width="6"/>
-                            <polygon points="100,50 125,120 75,120" fill="#fbbf24"/>
-                            <rect x="85" y="125" width="30" height="22" rx="3" fill="#facc15"/>
-                        </svg>
-                    </div>
+                    <img src="/logo.png" class="w-10 h-10 object-contain rounded-full border border-amber-500/40 bg-slate-900" alt="Emblem">
                     <div>
                         <div class="flex items-center space-x-2">
                             <h2 class="font-extrabold text-base tracking-wide text-white">நாங்கம் காவல் நண்பன்</h2>
