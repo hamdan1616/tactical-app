@@ -37,8 +37,8 @@ class Blockade(Base):
     severity = Column(String)
     status = Column(String, default="ACTIVE")
     notes = Column(String, nullable=True)
-    image_url = Column(String, nullable=True)       # Can store URL or Base64 Data URI
-    clearance_photo = Column(String, nullable=True) # Stores Live Officer Capture
+    image_url = Column(String, nullable=True)       # Stores AI Hazard Snapshot / Base64 Data URI
+    clearance_photo = Column(String, nullable=True) # Stores Live Officer Clearance Photo
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -49,7 +49,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="18.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="19.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -85,7 +85,7 @@ class EdgeModelTrigger(BaseModel):
     longitude: float
     severity: str = "CRITICAL"
     notes: str
-    image_base64: Optional[str] = None  # Real camera frame from YOLO
+    image_base64: Optional[str] = None
 
 @app.on_event("startup")
 def seed_initial_data():
@@ -607,10 +607,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user or user.password != form_data.password: raise HTTPException(status_code=401)
     return {"access_token": user.username, "token_type": "bearer"}
 
+@app.head("/blockades/", tags=["Tactical Blockades"])
 @app.get("/blockades/", tags=["Tactical Blockades"])
 def get_blockades(db: Session = Depends(get_db)): return db.query(Blockade).all()
 
-# --- NEW: LIVE PROJECT MODEL & HARDWARE ENDPOINT ---
+# --- LIVE PROJECT MODEL & HARDWARE ENDPOINT ---
 @app.post("/api/edge-trigger", tags=["Live Project Model Integration"])
 def trigger_from_project_model(payload: EdgeModelTrigger, db: Session = Depends(get_db)):
     if payload.api_key != EDGE_API_KEY:
@@ -675,7 +676,6 @@ async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), tok
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b: raise HTTPException(status_code=404)
     
-    # Read real live photo captured by the officer and convert to Base64 so it displays permanently
     file_bytes = await file.read()
     base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
     mime_type = file.content_type or "image/jpeg"
