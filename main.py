@@ -2,7 +2,7 @@
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime
@@ -32,8 +32,8 @@ class Blockade(Base):
     location_name = Column(String, index=True)
     latitude = Column(Float)
     longitude = Column(Float)
-    severity = Column(String)  # CRITICAL, HIGH, MEDIUM
-    status = Column(String, default="ACTIVE")  # ACTIVE, ASSIGNED, RESOLVED
+    severity = Column(String)
+    status = Column(String, default="ACTIVE")
     notes = Column(String, nullable=True)
 
 class Notification(Base):
@@ -44,7 +44,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="12.0")
+app = FastAPI(title="நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="13.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,7 +78,6 @@ class RegisterRequest(BaseModel):
     badge_number: str
     password: str
 
-# In-memory temporary store for OTP verification during prototype registration
 active_otps = {}
 
 @app.on_event("startup")
@@ -128,7 +127,7 @@ def serve_frontend():
                 background: linear-gradient(90deg, #b91c1c 0%, #b91c1c 50%, #1e3a8a 50%, #1e3a8a 100%);
             }
             .gold-glow {
-                box-shadow: 0 0 30px rgba(217, 119, 6, 0.3);
+                box-shadow: 0 0 35px rgba(217, 119, 6, 0.35);
             }
         </style>
     </head>
@@ -142,17 +141,36 @@ def serve_frontend():
             <div class="bg-[#0d182e] border-2 border-amber-500/40 rounded-2xl w-full max-w-md p-7 gold-glow relative overflow-hidden">
                 <div class="absolute top-0 left-0 right-0 h-1.5 tn-police-stripe"></div>
 
-                <!-- EMBLEM LOGO -->
+                <!-- OFFICIAL TAMIL NADU POLICE CREST -->
                 <div class="text-center mb-5">
-                    <div class="inline-flex items-center justify-center w-24 h-24 mb-2 rounded-full bg-[#070e1c] border-2 border-amber-500/50 p-1.5 shadow-lg">
-                        <img src="https://i.ibb.co/h15G272/image-609a59.png" alt="Tamil Nadu Police Emblem" class="w-full h-full object-contain rounded-full" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/e/e0/TamilNaduPoliceEmblem.png'">
+                    <div class="inline-flex items-center justify-center w-26 h-26 mb-2 rounded-full bg-[#1e3a8a] border-2 border-amber-400 p-1 shadow-2xl relative overflow-hidden">
+                        <!-- Precise SVG Recreation of TN Police Emblem matching user uploaded badge -->
+                        <svg viewBox="0 0 200 200" class="w-full h-full">
+                            <circle cx="100" cy="100" r="96" fill="#172554" stroke="#fbbf24" stroke-width="4"/>
+                            <!-- Outer Ring Text Path simulation -->
+                            <path id="ring" d="M 30,100 a 70,70 0 1,1 140,0" fill="none"/>
+                            <text font-size="14.5" font-weight="bold" fill="#ffffff" letter-spacing="2.5"><textPath href="#ring" startOffset="50%" text-anchor="middle">TAMIL NADU POLICE</textPath></text>
+                            <!-- Gopuram Temple Tower Center -->
+                            <polygon points="100,50 125,120 75,120" fill="#fbbf24" stroke="#d97706" stroke-width="2"/>
+                            <line x1="85" y1="70" x2="115" y2="70" stroke="#172554" stroke-width="2"/>
+                            <line x1="80" y1="90" x2="120" y2="90" stroke="#172554" stroke-width="2"/>
+                            <line x1="77" y1="110" x2="123" y2="110" stroke="#172554" stroke-width="2"/>
+                            <!-- Lion Capital Emblem at Bottom -->
+                            <rect x="85" y="125" width="30" height="22" rx="3" fill="#facc15"/>
+                            <rect x="75" y="148" width="50" height="14" fill="#ffffff"/>
+                            <rect x="80" y="148" width="10" height="14" fill="#ff9933"/>
+                            <rect x="110" y="148" width="10" height="14" fill="#138808"/>
+                            <!-- Truth Alone Triumphs Ribbon -->
+                            <path d="M 40,172 Q 100,192 160,172 L 150,188 Q 100,205 50,188 Z" fill="#b91c1c" stroke="#fbbf24" stroke-width="1.5"/>
+                            <text x="100" y="184" font-size="9" font-weight="bold" fill="#ffffff" text-anchor="middle">TRUTH ALONE TRIUMPHS</text>
+                        </svg>
                     </div>
                     <div class="text-[11px] font-bold uppercase tracking-widest text-amber-400">தமிழ்நாடு காவல்துறை • Tamil Nadu Police</div>
                     <h1 class="text-xl font-extrabold tracking-tight text-white mt-0.5">நாங்கம் காவல் நண்பன்</h1>
                     <p class="text-xs font-semibold text-amber-300/90">NAANGHAM KAAVAL NANBAN</p>
                 </div>
 
-                <!-- TABS FOR LOGIN / REGISTER -->
+                <!-- TABS -->
                 <div class="grid grid-cols-2 gap-1 bg-[#070e1c] p-1 rounded-xl mb-5 border border-amber-500/20">
                     <button onclick="switchTab('login')" id="tab-login" class="py-2 text-xs font-bold rounded-lg bg-amber-500 text-slate-950 transition cursor-pointer">Officer Login</button>
                     <button onclick="switchTab('register')" id="tab-register" class="py-2 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition cursor-pointer">New Registration</button>
@@ -174,7 +192,7 @@ def serve_frontend():
                     <div id="login-error" class="text-center text-xs text-red-400 hidden"></div>
                 </form>
 
-                <!-- REGISTRATION & OTP FORM -->
+                <!-- REGISTRATION FORM -->
                 <div id="form-register" class="hidden space-y-3">
                     <div id="reg-step-1" class="space-y-3">
                         <div>
@@ -204,7 +222,6 @@ def serve_frontend():
                         </button>
                     </div>
 
-                    <!-- STEP 2: ENTER OTP -->
                     <div id="reg-step-2" class="hidden space-y-3">
                         <div class="bg-blue-950/40 border border-blue-500/30 p-2.5 rounded-lg text-center">
                             <p class="text-xs text-blue-300">OTP dispatched to registered mobile & email.</p>
@@ -227,7 +244,13 @@ def serve_frontend():
         <div id="dashboard" class="hidden flex flex-col h-[calc(100vh-6px)]">
             <header class="bg-[#0d182e] border-b-2 border-amber-500/40 px-6 py-2.5 flex justify-between items-center shadow-md">
                 <div class="flex items-center space-x-3.5">
-                    <img src="https://i.ibb.co/h15G272/image-609a59.png" class="w-10 h-10 object-contain rounded-full border border-amber-500/40" alt="Emblem">
+                    <div class="w-10 h-10 rounded-full bg-[#1e3a8a] border border-amber-400 flex items-center justify-center p-0.5 shrink-0">
+                        <svg viewBox="0 0 200 200" class="w-full h-full">
+                            <circle cx="100" cy="100" r="96" fill="#172554" stroke="#fbbf24" stroke-width="6"/>
+                            <polygon points="100,50 125,120 75,120" fill="#fbbf24"/>
+                            <rect x="85" y="125" width="30" height="22" rx="3" fill="#facc15"/>
+                        </svg>
+                    </div>
                     <div>
                         <div class="flex items-center space-x-2">
                             <h2 class="font-extrabold text-base tracking-wide text-white">நாங்கம் காவல் நண்பன்</h2>
@@ -352,7 +375,6 @@ def serve_frontend():
                 tempRegData = { name, badge_number: badge, mobile, email, password };
                 generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
 
-                // Call backend to trigger dispatch simulation
                 await fetch('/auth/request-otp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -598,7 +620,6 @@ def register_officer(reg: RegisterRequest, db: Session = Depends(get_db)):
 
 @app.post("/auth/request-otp", tags=["Authentication"])
 def request_otp(data: dict):
-    # Simulates sending an SMS & Mail OTP
     print(f"\n[TN POLICE OTP DISPATCH] Sent to Email: {data.get('email')} & Mobile: {data.get('mobile')} -> OTP: {data.get('otp')}\n")
     return {"message": "OTP dispatched successfully"}
 
