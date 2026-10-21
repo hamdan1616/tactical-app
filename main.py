@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+﻿from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
@@ -27,6 +27,7 @@ class User(Base):
     email = Column(String)
     mobile = Column(String)
     badge_number = Column(String, unique=True, index=True)
+    profile_photo = Column(String, nullable=True) # Base64 Profile Picture
 
 class Blockade(Base):
     __tablename__ = "blockades"
@@ -39,6 +40,7 @@ class Blockade(Base):
     notes = Column(String, nullable=True)
     image_url = Column(String, nullable=True)       # Stores AI Hazard Snapshot / Base64 Data URI
     clearance_photo = Column(String, nullable=True) # Stores Live Officer Clearance Photo
+    resolved_by = Column(String, nullable=True)     # Badge/Username of the officer who resolved it
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -49,7 +51,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="20.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="21.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -249,8 +251,25 @@ def serve_frontend():
                         <i class="fa-solid fa-satellite-dish text-red-400"></i> Simulate AI Hazard
                     </button>
                     <a href="/docs" target="_blank" class="text-xs text-amber-400 hover:underline px-2 font-medium">API /docs ↗</a>
-                    <span id="user-badge" class="text-xs font-semibold text-amber-200 bg-slate-900/90 border border-amber-500/30 px-2.5 py-1 rounded"></span>
-                    <button onclick="logout()" class="bg-red-900/40 hover:bg-red-800/60 border border-red-500/30 text-red-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer">Logout</button>
+                    
+                    <!-- MORE / PROFILE MENU -->
+                    <div class="relative">
+                        <button onclick="toggleProfileMenu()" class="bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-2">
+                            <i class="fa-solid fa-user-shield"></i> <span id="user-badge">Officer</span> <i class="fa-solid fa-caret-down text-[10px]"></i>
+                        </button>
+                        <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-[#0d182e] border border-amber-500/40 rounded-xl shadow-2xl z-50 overflow-hidden py-1">
+                            <button onclick="openProfileModal()" class="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-amber-500/20 hover:text-amber-300 transition flex items-center gap-2 cursor-pointer">
+                                <i class="fa-solid fa-id-card text-amber-400"></i> View & Edit Profile
+                            </button>
+                            <button onclick="openClearancesModal()" class="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-amber-500/20 hover:text-amber-300 transition flex items-center gap-2 cursor-pointer">
+                                <i class="fa-solid fa-clipboard-check text-emerald-400"></i> My Last 10 Clearances
+                            </button>
+                            <div class="border-t border-slate-700 my-1"></div>
+                            <button onclick="logout()" class="w-full text-left px-4 py-2.5 text-xs text-red-400 hover:bg-red-950/40 transition flex items-center gap-2 cursor-pointer">
+                                <i class="fa-solid fa-right-from-bracket"></i> Logout
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </header>
 
@@ -286,6 +305,66 @@ def serve_frontend():
                         </div>
                         <div id="notification-box" class="flex-1 bg-[#070e1c] border border-slate-800 rounded-lg p-3 overflow-y-auto space-y-2 font-mono text-xs text-slate-200"></div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PROFILE & EDIT MODAL -->
+        <div id="profile-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-[#0d182e] border-2 border-amber-500/50 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <h3 class="font-bold text-sm text-amber-400 uppercase"><i class="fa-solid fa-id-card mr-2"></i>Officer Profile & Settings</h3>
+                    <button onclick="closeProfileModal()" class="text-slate-400 hover:text-white text-xs cursor-pointer"><i class="fa-solid fa-xmark text-base"></i></button>
+                </div>
+                <form id="profile-form" onsubmit="updateProfile(event)" class="space-y-3">
+                    <div class="flex flex-col items-center justify-center space-y-2">
+                        <div class="w-20 h-20 rounded-full bg-[#070e1c] border-2 border-amber-400 overflow-hidden flex items-center justify-center">
+                            <img id="profile-avatar-preview" src="/logo.png" class="w-full h-full object-cover">
+                        </div>
+                        <label class="text-[11px] text-amber-300 cursor-pointer hover:underline">
+                            Change Profile Photo <input type="file" id="profile-photo-input" accept="image/*" class="hidden" onchange="previewAvatar(event)">
+                        </label>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Full Name</label>
+                        <input type="text" id="profile-name" required class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Badge ID</label>
+                            <input type="text" id="profile-badge" disabled class="w-full bg-[#070e1c]/50 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Mobile Number</label>
+                            <input type="tel" id="profile-mobile" required class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Official Email</label>
+                        <input type="email" id="profile-email" required class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">New Password (Optional)</label>
+                        <input type="password" id="profile-password" placeholder="Leave blank to keep current" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                    </div>
+                    <div class="flex space-x-2 pt-2">
+                        <button type="submit" class="flex-1 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-2 rounded-lg text-xs cursor-pointer shadow">Save Changes</button>
+                        <button type="button" onclick="closeProfileModal()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-xs cursor-pointer">Cancel</button>
+                    </div>
+                    <div id="profile-msg" class="text-center text-xs text-emerald-400 hidden"></div>
+                </form>
+            </div>
+        </div>
+
+        <!-- MY LAST 10 CLEARANCES MODAL -->
+        <div id="clearances-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-[#0d182e] border-2 border-emerald-500/50 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl flex flex-col max-h-[85vh]">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <h3 class="font-bold text-sm text-emerald-400 uppercase"><i class="fa-solid fa-clipboard-check mr-2"></i>My Last 10 Blockade Clearances</h3>
+                    <button onclick="closeClearancesModal()" class="text-slate-400 hover:text-white text-xs cursor-pointer"><i class="fa-solid fa-xmark text-base"></i></button>
+                </div>
+                <div id="clearances-list" class="flex-1 overflow-y-auto space-y-3 pr-1">
+                    <!-- Populated dynamically -->
                 </div>
             </div>
         </div>
@@ -339,6 +418,117 @@ def serve_frontend():
                     text.innerText = 'SECURE GRID OFFLINE';
                 }
             }, 3500);
+
+            function toggleProfileMenu() {
+                const dropdown = document.getElementById('profile-dropdown');
+                dropdown.classList.toggle('hidden');
+            }
+
+            window.onclick = function(event) {
+                if (!event.target.closest('#profile-dropdown') && !event.target.closest('button[onclick="toggleProfileMenu()"]')) {
+                    document.getElementById('profile-dropdown').classList.add('hidden');
+                }
+            }
+
+            async function openProfileModal() {
+                document.getElementById('profile-dropdown').classList.add('hidden');
+                try {
+                    const res = await fetch('/api/profile', { headers: { 'Authorization': 'Bearer ' + authToken } });
+                    if (res.ok) {
+                        const profile = await res.json();
+                        document.getElementById('profile-name').value = profile.name || '';
+                        document.getElementById('profile-badge').value = profile.badge_number || '';
+                        document.getElementById('profile-mobile').value = profile.mobile || '';
+                        document.getElementById('profile-email').value = profile.email || '';
+                        if (profile.profile_photo) {
+                            document.getElementById('profile-avatar-preview').src = profile.profile_photo;
+                        }
+                    }
+                } catch (e) { console.error(e); }
+                document.getElementById('profile-modal').classList.remove('hidden');
+            }
+
+            function closeProfileModal() {
+                document.getElementById('profile-modal').classList.add('hidden');
+            }
+
+            function previewAvatar(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(evt) {
+                        document.getElementById('profile-avatar-preview').src = evt.target.result;
+                    }
+                    reader.readAsDataURL(file);
+                }
+            }
+
+            async function updateProfile(e) {
+                e.preventDefault();
+                const formData = new FormData();
+                formData.append('name', document.getElementById('profile-name').value);
+                formData.append('mobile', document.getElementById('profile-mobile').value);
+                formData.append('email', document.getElementById('profile-email').value);
+                const pwd = document.getElementById('profile-password').value;
+                if (pwd) formData.append('password', pwd);
+                const photoFile = document.getElementById('profile-photo-input').files[0];
+                if (photoFile) formData.append('file', photoFile);
+
+                try {
+                    const res = await fetch('/api/profile', {
+                        method: 'PUT',
+                        headers: { 'Authorization': 'Bearer ' + authToken },
+                        body: formData
+                    });
+                    if (res.ok) {
+                        const msg = document.getElementById('profile-msg');
+                        msg.innerText = 'Profile updated successfully!';
+                        msg.classList.remove('hidden');
+                        setTimeout(() => { msg.classList.add('hidden'); closeProfileModal(); }, 1500);
+                    } else {
+                        alert('Failed to update profile.');
+                    }
+                } catch (err) { alert('Error: ' + err.message); }
+            }
+
+            async function openClearancesModal() {
+                document.getElementById('profile-dropdown').classList.add('hidden');
+                const list = document.getElementById('clearances-list');
+                list.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Loading your clearance history...</p>';
+                document.getElementById('clearances-modal').classList.remove('hidden');
+
+                try {
+                    const res = await fetch('/api/my-clearances', { headers: { 'Authorization': 'Bearer ' + authToken } });
+                    if (res.ok) {
+                        const data = await res.json();
+                        list.innerHTML = '';
+                        if (data.length === 0) {
+                            list.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">No blockade clearances recorded yet.</p>';
+                            return;
+                        }
+                        data.forEach((b, idx) => {
+                            list.innerHTML += `
+                                <div class="bg-[#070e1c] border border-emerald-500/30 p-3 rounded-xl flex items-center justify-between gap-4">
+                                    <div class="space-y-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-xs font-bold text-amber-400">#${idx + 1} - ${b.location_name}</span>
+                                            <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold">RESOLVED</span>
+                                        </div>
+                                        <p class="text-[11px] text-slate-300">${b.notes || 'No notes'}</p>
+                                    </div>
+                                    ${b.clearance_photo ? `<img src="${b.clearance_photo}" class="w-16 h-16 object-cover rounded-lg border border-emerald-500/40 shrink-0">` : ''}
+                                </div>
+                            `;
+                        });
+                    }
+                } catch (e) {
+                    list.innerHTML = '<p class="text-xs text-red-400 text-center py-4">Failed to load clearances.</p>';
+                }
+            }
+
+            function closeClearancesModal() {
+                document.getElementById('clearances-modal').classList.add('hidden');
+            }
 
             function switchTab(tab) {
                 const loginTab = document.getElementById('tab-login');
@@ -431,6 +621,7 @@ def serve_frontend():
             function showDashboard() {
                 document.getElementById('login-modal').classList.add('hidden');
                 document.getElementById('dashboard').classList.remove('hidden');
+                document.getElementById('user-badge').innerText = authToken;
                 setTimeout(() => {
                     initMap();
                     loadBlockades();
@@ -454,7 +645,6 @@ def serve_frontend():
                     const data = await res.json();
                     authToken = data.access_token;
                     localStorage.setItem('token_8002', authToken);
-                    document.getElementById('user-badge').innerText = 'Officer: ' + username;
                     showDashboard();
                 } catch (err) {
                     const errDiv = document.getElementById('login-error');
@@ -489,7 +679,7 @@ def serve_frontend():
                     let imgHtml = b.image_url ? `<img src="${b.image_url}" class="w-full h-28 object-cover rounded border border-slate-700 mt-1 mb-1">` : '';
                     let clearanceHtml = b.clearance_photo ? `
                         <div class="mt-1 p-1.5 bg-emerald-950/40 border border-emerald-500/30 rounded">
-                            <div class="text-[10px] text-emerald-400 font-bold mb-1"><i class="fa-solid fa-camera"></i> Live Clearance Verified:</div>
+                            <div class="text-[10px] text-emerald-400 font-bold mb-1"><i class="fa-solid fa-camera"></i> Live Clearance Verified (By: ${b.resolved_by || 'Officer'}):</div>
                             <img src="${b.clearance_photo}" class="w-full h-20 object-cover rounded">
                         </div>` : '';
 
@@ -576,9 +766,7 @@ def serve_frontend():
                         body: formData
                     });
 
-                    if (!res.ok) {
-                        throw new Error('Failed to upload clearance photo');
-                    }
+                    if (!res.ok) throw new Error('Failed to upload clearance photo');
 
                     closePhotoModal();
                     loadBlockades();
@@ -615,6 +803,53 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or user.password != form_data.password: raise HTTPException(status_code=401)
     return {"access_token": user.username, "token_type": "bearer"}
+
+# --- PROFILE ENDPOINTS ---
+@app.get("/api/profile", tags=["Officer Profile"])
+def get_profile(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == token).first()
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "name": user.name,
+        "email": user.email,
+        "mobile": user.mobile,
+        "badge_number": user.badge_number,
+        "profile_photo": user.profile_photo
+    }
+
+@app.put("/api/profile", tags=["Officer Profile"])
+async def update_profile(
+    name: str = Form(...),
+    email: str = Form(...),
+    mobile: str = Form(...),
+    password: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.username == token).first()
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    
+    user.name = name
+    user.email = email
+    user.mobile = mobile
+    if password:
+        user.password = password
+    if file:
+        file_bytes = await file.read()
+        base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
+        user.profile_photo = f"data:{file.content_type or 'image/jpeg'};base64,{base64_encoded}"
+    
+    db.commit()
+    return {"message": "Profile updated successfully"}
+
+@app.get("/api/my-clearances", tags=["Officer Profile"])
+def get_my_clearances(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    clearances = db.query(Blockade).filter(
+        Blockade.status == "RESOLVED",
+        Blockade.resolved_by == token
+    ).order_by(Blockade.id.desc()).limit(10).all()
+    return clearances
 
 @app.head("/blockades/", tags=["Tactical Blockades"])
 @app.get("/blockades/", tags=["Tactical Blockades"])
@@ -694,7 +929,8 @@ async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), tok
 
         b.status = "RESOLVED"
         b.clearance_photo = data_uri
-        db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name}", image_thumb=data_uri))
+        b.resolved_by = token  # Associates clearance data specifically with this officer
+        db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name} by officer {token}", image_thumb=data_uri))
         db.commit()
         return {"message": "Resolved with live camera photo verification"}
     except Exception as e:
