@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
+﻿from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
@@ -34,10 +34,10 @@ class Blockade(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     severity = Column(String)
-    status = Column(String, default="ACTIVE")  # ACTIVE, ARRIVED, RESOLVED
+    status = Column(String, default="ACTIVE")
     notes = Column(String, nullable=True)
-    image_url = Column(String, nullable=True)          # AI Hazard Snapshot
-    clearance_photo = Column(String, nullable=True)    # Live Verified Officer Capture
+    image_url = Column(String, nullable=True)
+    clearance_photo = Column(String, nullable=True)
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -48,7 +48,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="16.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="17.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,15 +66,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-class BlockadeCreate(BaseModel):
-    location_name: str
-    latitude: float
-    longitude: float
-    severity: str
-    status: str = "ACTIVE"
-    notes: Optional[str] = None
-    image_url: Optional[str] = None
 
 class RegisterRequest(BaseModel):
     name: str
@@ -122,7 +113,7 @@ def serve_frontend():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>நாங்கம் காவல் நண்பன் | Naangham Kaaval Nanban - Tamil Nadu Police</title>
+        <title>நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - Tamil Nadu Police</title>
         <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -152,7 +143,7 @@ def serve_frontend():
                         <img src="/logo.png" alt="TN Police Logo" class="w-full h-full object-contain rounded-full">
                     </div>
                     <div class="text-[11px] font-bold uppercase tracking-widest text-amber-400">தமிழ்நாடு காவல்துறை • Tamil Nadu Police</div>
-                    <h1 class="text-xl font-extrabold tracking-tight text-white mt-0.5">நாங்கம் காவல் நண்பன்</h1>
+                    <h1 class="text-xl font-extrabold tracking-tight text-white mt-0.5">நான்காம் காவல் நண்பன்</h1>
                     <p class="text-xs font-semibold text-amber-300/90">NAANGHAM KAAVAL NANBAN</p>
                 </div>
 
@@ -161,14 +152,15 @@ def serve_frontend():
                     <button onclick="switchTab('register')" id="tab-register" class="py-2 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition cursor-pointer">New Registration</button>
                 </div>
 
+                <!-- BLANK LOGIN FORM (NO DEFAULT VALUES) -->
                 <form id="form-login" onsubmit="handleLogin(event)" class="space-y-3.5">
                     <div>
                         <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Badge ID / Username</label>
-                        <input type="text" id="login-username" required value="test1" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400">
+                        <input type="text" id="login-username" required placeholder="Enter Badge ID" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400">
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Password</label>
-                        <input type="password" id="login-password" required value="password" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400">
+                        <input type="password" id="login-password" required placeholder="Enter Password" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400">
                     </div>
                     <button type="submit" class="w-full bg-gradient-to-r from-red-700 to-blue-800 hover:from-red-600 hover:to-blue-700 border border-amber-400/50 text-white font-bold py-2.5 rounded-lg transition text-sm cursor-pointer shadow-md">
                         <i class="fa-solid fa-shield-halved mr-1 text-amber-300"></i> Secure Login
@@ -230,7 +222,7 @@ def serve_frontend():
                     <img src="/logo.png" class="w-10 h-10 object-contain rounded-full border border-amber-500/40 bg-slate-900" alt="Emblem">
                     <div>
                         <div class="flex items-center space-x-2">
-                            <h2 class="font-extrabold text-base tracking-wide text-white">நாங்கம் காவல் நண்பன்</h2>
+                            <h2 class="font-extrabold text-base tracking-wide text-white">நான்காம் காவல் நண்பன்</h2>
                             <span class="text-xs font-bold text-amber-300 bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 rounded">NAANGHAM KAAVAL NANBAN</span>
                             <span id="grid-status-badge" class="text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 transition-all">
                                 <span id="grid-dot" class="w-2 h-2 rounded-full"></span> <span id="grid-text">CONNECTING...</span>
@@ -251,7 +243,6 @@ def serve_frontend():
             </header>
 
             <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 overflow-hidden">
-                <!-- Left: Active Field Incidents & Patrol Feed (Broadcast option removed for field officers) -->
                 <div class="lg:col-span-4 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col overflow-hidden space-y-4 shadow-lg">
                     <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
                         <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400">Active Field Incidents & Blockades</h3>
@@ -263,7 +254,6 @@ def serve_frontend():
                     <div id="blockade-list" class="flex-1 overflow-y-auto space-y-2.5 pr-1"></div>
                 </div>
 
-                <!-- Right: Map & Logs -->
                 <div class="lg:col-span-8 flex flex-col gap-5 overflow-hidden">
                     <div class="flex-1 bg-[#0d182e] border border-amber-500/30 rounded-xl p-3 flex flex-col relative overflow-hidden min-h-[300px] shadow-lg">
                         <div class="flex justify-between items-center mb-2 px-1">
@@ -299,7 +289,6 @@ def serve_frontend():
                     <p class="text-xs text-slate-300 mt-1">Gallery uploads are disabled to prevent false clearance. Take a live photo of the cleared road.</p>
                 </div>
                 
-                <!-- STRICT LIVE CAMERA ATTRIBUTE -->
                 <input type="file" id="clearance-file" accept="image/*" capture="environment" class="w-full text-xs text-slate-300 bg-[#070e1c] border border-emerald-500/40 rounded p-2.5">
                 
                 <div class="flex space-x-2 pt-2">
@@ -408,7 +397,6 @@ def serve_frontend():
                 alert('Officer account registered successfully! Please log in.');
                 switchTab('login');
                 document.getElementById('login-username').value = tempRegData.badge_number;
-                document.getElementById('login-password').value = tempRegData.password;
             }
 
             function initMap() {
@@ -416,7 +404,7 @@ def serve_frontend():
                 map = L.map('map').setView([10.9601, 79.3845], 10);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                     maxZoom: 19,
-                    attribution: '© OpenStreetMap | நாங்கம் காவல் நண்பன்'
+                    attribution: '© OpenStreetMap | நான்காம் காவல் நண்பன்'
                 }).addTo(map);
                 markersLayer = L.layerGroup().addTo(map);
             }
