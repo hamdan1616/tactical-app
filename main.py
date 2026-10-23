@@ -28,6 +28,7 @@ class User(Base):
     mobile = Column(String)
     badge_number = Column(String, unique=True, index=True)
     profile_photo = Column(String, nullable=True) # Base64 Profile Picture
+    status = Column(String, default="ACTIVE")     # 'ACTIVE' or 'PENDING APPROVAL'
 
 class Blockade(Base):
     __tablename__ = "blockades"
@@ -51,7 +52,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="21.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="22.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -92,15 +93,6 @@ class EdgeModelTrigger(BaseModel):
 @app.on_event("startup")
 def seed_initial_data():
     db = SessionLocal()
-    if not db.query(User).filter(User.username == "test1").first():
-        db.add(User(
-            username="test1",
-            password="password",
-            name="Inspector Test Officer",
-            email="tnpolice007@tn.gov.in",
-            mobile="9876543210",
-            badge_number="TN-POLICE-007"
-        ))
     if not db.query(User).filter(User.username == "TN-ADMIN-01").first():
         db.add(User(
             username="TN-ADMIN-01",
@@ -108,7 +100,18 @@ def seed_initial_data():
             name="Central Command Admin",
             email="admin@tnpolice.gov.in",
             mobile="9999999999",
-            badge_number="TN-ADMIN-01"
+            badge_number="TN-ADMIN-01",
+            status="ACTIVE"
+        ))
+    if not db.query(User).filter(User.username == "test1").first():
+        db.add(User(
+            username="test1",
+            password="password",
+            name="Inspector Test Officer",
+            email="tnpolice007@tn.gov.in",
+            mobile="9876543210",
+            badge_number="TN-POLICE-007",
+            status="ACTIVE"
         ))
     if db.query(Blockade).count() == 0:
         db.add(Blockade(
@@ -286,22 +289,21 @@ def serve_frontend():
             <div id="admin-panel" class="hidden bg-[#0d182e] border-b-2 border-amber-500/30 p-4 px-6">
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400 flex items-center gap-2">
-                        <i class="fa-solid fa-shield-cat text-amber-300"></i> Central Command Supervisor: All Department Clearances & Oversight
+                        <i class="fa-solid fa-shield-cat text-amber-300"></i> Central Command Supervisor: Officer Approvals & Department Oversight
                     </h3>
                     <span class="text-[11px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold">ADMIN SUPERVISOR ACCESS</span>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-56 overflow-y-auto">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-60 overflow-y-auto">
                     <div class="bg-[#070e1c] border border-amber-500/20 rounded-lg p-3">
-                        <h4 class="text-xs font-bold text-slate-300 mb-2">Registered Officer Status</h4>
-                        <div class="space-y-1.5 text-xs text-slate-400">
-                            <p>🛡️ Central Command Admin (TN-ADMIN-01) - Supervisor Active</p>
-                            <p>👮 Inspector Test Officer (TN-POLICE-007) - Active</p>
+                        <h4 class="text-xs font-bold text-slate-300 mb-2">Registered Officer Accounts & Approvals</h4>
+                        <div id="admin-officers-list" class="space-y-2 text-xs text-slate-300">
+                            <!-- Populated dynamically -->
                         </div>
                     </div>
                     <div class="bg-[#070e1c] border border-emerald-500/20 rounded-lg p-3">
-                        <h4 class="text-xs font-bold text-emerald-400 mb-2">All Department Verified Clearances</h4>
-                        <div id="admin-clearances-list" class="space-y-1.5 text-xs text-slate-300">
-                            <!-- Populated dynamically for admin -->
+                        <h4 class="text-xs font-bold text-emerald-400 mb-2">All Department Verified Clearances & Proof Photos</h4>
+                        <div id="admin-clearances-list" class="space-y-2 text-xs text-slate-300">
+                            <!-- Populated dynamically -->
                         </div>
                     </div>
                 </div>
@@ -631,11 +633,11 @@ def serve_frontend():
                 if (!res.ok) {
                     const err = await res.json();
                     errDiv.innerText = err.detail || 'Registration failed.';
-                    errDiv.classList.remove('hidden');
+                    errDiv.classList.add('hidden');
                     return;
                 }
 
-                alert('Officer account registered successfully! Please log in.');
+                alert('Officer account registered successfully! Awaiting Admin approval.');
                 switchTab('login');
                 document.getElementById('login-username').value = tempRegData.badge_number;
             }
@@ -660,7 +662,7 @@ def serve_frontend():
                 // Check if logged in as Admin
                 if (authToken.toUpperCase() === 'TN-ADMIN-01') {
                     document.getElementById('admin-panel').classList.remove('hidden');
-                    loadAdminClearances();
+                    loadAdminPanelData();
                 }
 
                 setTimeout(() => {
@@ -670,8 +672,29 @@ def serve_frontend():
                 }, 100);
             }
 
-            async function loadAdminClearances() {
+            async function loadAdminPanelData() {
                 try {
+                    // Load Officers
+                    const offRes = await fetch('/admin/officers', { headers: { 'Authorization': 'Bearer ' + authToken } });
+                    if (offRes.ok) {
+                        const officers = await offRes.json();
+                        const offContainer = document.getElementById('admin-officers-list');
+                        offContainer.innerHTML = '';
+                        officers.forEach(o => {
+                            let badgeStyle = o.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400';
+                            offContainer.innerHTML += `
+                                <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                                    <div><strong>${o.name}</strong> (${o.badge_number})<br><span class="text-[10px] text-slate-400">${o.email}</span></div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-[10px] px-2 py-0.5 rounded font-bold ${badgeStyle}">${o.status}</span>
+                                        ${o.status === 'PENDING APPROVAL' ? `<button onclick="approveOfficer('${o.badge_number}')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] px-2 py-1 rounded cursor-pointer">Approve</button>` : ''}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    // Load Clearances
                     const res = await fetch('/blockades/');
                     const data = await res.json();
                     const container = document.getElementById('admin-clearances-list');
@@ -683,13 +706,21 @@ def serve_frontend():
                     }
                     resolved.forEach((b) => {
                         container.innerHTML += `
-                            <div class="flex items-center justify-between border-b border-slate-800 pb-1">
-                                <div>📍 <strong class="text-white">${b.location_name}</strong> (By: <span class="text-amber-300">${b.resolved_by || 'Officer'}</span>)</div>
-                                ${b.clearance_photo ? `<a href="${b.clearance_photo}" target="_blank" class="text-emerald-400 hover:underline text-[11px]">View Proof</a>` : ''}
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 gap-2">
+                                <div>📍 <strong class="text-white">${b.location_name}</strong><br><span class="text-[10px] text-amber-300">Resolved by: ${b.resolved_by || 'Officer'}</span></div>
+                                ${b.clearance_photo ? `<a href="${b.clearance_photo}" target="_blank"><img src="${b.clearance_photo}" class="w-12 h-12 object-cover rounded border border-emerald-500/40 shrink-0"></a>` : '<span class="text-[10px] text-slate-500">No Photo</span>'}
                             </div>
                         `;
                     });
                 } catch (e) { console.error(e); }
+            }
+
+            async function approveOfficer(badge) {
+                await fetch(`/admin/officers/${badge}/approve`, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
+                loadAdminPanelData();
             }
 
             async function handleLogin(e) {
@@ -854,7 +885,15 @@ def serve_frontend():
 def register_officer(reg: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter((User.badge_number == reg.badge_number) | (User.username == reg.badge_number)).first()
     if existing: raise HTTPException(status_code=400, detail="Officer already registered.")
-    db.add(User(username=reg.badge_number, password=reg.password, name=reg.name, email=reg.email, mobile=reg.mobile, badge_number=reg.badge_number))
+    db.add(User(
+        username=reg.badge_number,
+        password=reg.password,
+        name=reg.name,
+        email=reg.email,
+        mobile=reg.mobile,
+        badge_number=reg.badge_number,
+        status="PENDING APPROVAL"
+    ))
     db.commit()
     return {"message": "Success"}
 
@@ -866,6 +905,24 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or user.password != form_data.password: raise HTTPException(status_code=401)
     return {"access_token": user.username, "token_type": "bearer"}
+
+# --- ADMIN OVERSIGHT & APPROVAL API ENDPOINTS ---
+@app.get("/admin/officers", tags=["Admin Control"])
+def get_admin_officers(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    if token != "TN-ADMIN-01":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    return db.query(User).all()
+
+@app.post("/admin/officers/{badge_number}/approve", tags=["Admin Control"])
+def approve_officer(badge_number: str, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    if token != "TN-ADMIN-01":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    officer = db.query(User).filter(User.badge_number == badge_number).first()
+    if not officer:
+        raise HTTPException(status_code=404, detail="Officer not found")
+    officer.status = "ACTIVE"
+    db.commit()
+    return {"message": f"Officer {badge_number} approved successfully"}
 
 # --- PROFILE ENDPOINTS ---
 @app.get("/api/profile", tags=["Officer Profile"])
@@ -896,8 +953,7 @@ async def update_profile(
     user.name = name
     user.email = email
     user.mobile = mobile
-    if password:
-        user.password = password
+    if password: user.password = password
     if file:
         file_bytes = await file.read()
         base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
@@ -981,8 +1037,7 @@ def mark_arrived(blockade_id: int, token: str = Depends(oauth2_scheme), db: Sess
 @app.post("/blockades/{blockade_id}/resolve-photo", tags=["Tactical Blockades"])
 async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
-    if not b: 
-        raise HTTPException(status_code=404, detail="Blockade not found")
+    if not b: raise HTTPException(status_code=404, detail="Blockade not found")
     
     try:
         file_bytes = await file.read()
@@ -998,6 +1053,18 @@ async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), tok
         return {"message": "Resolved with live camera photo verification"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/blockades/{blockade_id}/resolve-photo-base64", tags=["Tactical Blockades"])
+def resolve_with_photo_base64(blockade_id: int, payload: dict, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
+    if not b: raise HTTPException(status_code=404)
+    
+    b.status = "RESOLVED"
+    b.clearance_photo = payload.get("image_data")
+    b.resolved_by = token
+    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name} by officer {token}", image_thumb=b.clearance_photo))
+    db.commit()
+    return {"message": "Resolved via base64 photo"}
 
 @app.delete("/blockades/clear-resolved", tags=["Tactical Blockades"])
 def clear_resolved(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
