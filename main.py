@@ -28,7 +28,7 @@ class User(Base):
     mobile = Column(String)
     badge_number = Column(String, unique=True, index=True)
     profile_photo = Column(String, nullable=True)
-    status = Column(String, default="ACTIVE")
+    status = Column(String, default="ACTIVE") # 'ACTIVE' or 'PENDING APPROVAL'
 
 class Blockade(Base):
     __tablename__ = "blockades"
@@ -52,7 +52,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="26.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="27.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -767,7 +767,7 @@ def serve_frontend():
                     let clearanceHtml = b.clearance_photo ? `
                         <div class="mt-1 p-1.5 bg-emerald-950/40 border border-emerald-500/30 rounded">
                             <div class="text-[10px] text-emerald-400 font-bold mb-1"><i class="fa-solid fa-camera"></i> Live Clearance Verified (By: ${b.resolved_by || 'Officer'}):</div>
-                            <img src="${b.clearance_photo}" class="w-full h-24 object-cover rounded">
+                            <img src="${b.clearance_photo}" class="w-full h-20 object-cover rounded">
                         </div>` : '';
 
                     container.innerHTML += `
@@ -964,6 +964,22 @@ def get_my_clearances(token: str = Depends(oauth2_scheme), db: Session = Depends
 @app.head("/blockades/", tags=["Tactical Blockades"])
 @app.get("/blockades/", tags=["Tactical Blockades"])
 def get_blockades(db: Session = Depends(get_db)): return db.query(Blockade).all()
+
+# --- DATABASE RESET ENDPOINT TO CLEAR STUCK INCIDENTS ---
+@app.post("/blockades/reset-all", tags=["Tactical Blockades"])
+def reset_all_blockades(db: Session = Depends(get_db)):
+    db.query(Blockade).delete()
+    db.add(Blockade(
+        location_name="Kumbakonam Bypass Junction - Sector 2",
+        latitude=10.9601,
+        longitude=79.3845,
+        severity="CRITICAL",
+        status="ACTIVE",
+        notes="Multi-vehicle collision blocking north lane",
+        image_url="https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=400&q=80"
+    ))
+    db.commit()
+    return {"message": "Database reset successfully. All incidents set to active."}
 
 @app.post("/api/edge-trigger", tags=["Live Project Model Integration"])
 def trigger_from_project_model(payload: EdgeModelTrigger, db: Session = Depends(get_db)):
