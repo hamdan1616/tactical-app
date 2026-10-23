@@ -27,8 +27,8 @@ class User(Base):
     email = Column(String)
     mobile = Column(String)
     badge_number = Column(String, unique=True, index=True)
-    profile_photo = Column(String, nullable=True)
-    status = Column(String, default="ACTIVE") # 'ACTIVE' or 'PENDING APPROVAL'
+    profile_photo = Column(String, nullable=True) # Base64 Profile Picture
+    status = Column(String, default="ACTIVE")     # 'ACTIVE' or 'PENDING APPROVAL'
 
 class Blockade(Base):
     __tablename__ = "blockades"
@@ -37,11 +37,14 @@ class Blockade(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     severity = Column(String)
-    status = Column(String, default="ACTIVE")
+    status = Column(String, default="ACTIVE")     # ACTIVE, ASSIGNED, ARRIVED, RESOLVED
     notes = Column(String, nullable=True)
-    image_url = Column(String, nullable=True)
-    clearance_photo = Column(String, nullable=True)
-    resolved_by = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)       # Stores AI Hazard Snapshot / Base64 Data URI
+    clearance_photo = Column(String, nullable=True) # Stores Live Officer Clearance Photo
+    resolved_by = Column(String, nullable=True)     # Badge/Username of the officer who resolved it
+    # Live Officer Tracking Telemetry Coordinates
+    officer_lat = Column(Float, nullable=True)
+    officer_lng = Column(Float, nullable=True)
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -52,7 +55,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="27.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="29.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,6 +66,8 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+# Secret API Key for your YOLO / ESP32 Project Model
 EDGE_API_KEY = "BLU-GUARD-2026"
 
 def get_db():
@@ -88,6 +93,10 @@ class EdgeModelTrigger(BaseModel):
     notes: str
     image_base64: Optional[str] = None
 
+class TelemetryUpdate(BaseModel):
+    latitude: float
+    longitude: float
+
 @app.on_event("startup")
 def seed_initial_data():
     db = SessionLocal()
@@ -111,7 +120,10 @@ def seed_initial_data():
             badge_number="TN-POLICE-007",
             status="ACTIVE"
         ))
-    if db.query(Blockade).count() == 0:
+    
+    # Ensure at least one active emergency is present
+    active_count = db.query(Blockade).filter(Blockade.status == "ACTIVE").count()
+    if active_count == 0 and db.query(Blockade).count() == 0:
         db.add(Blockade(
             location_name="Kumbakonam Bypass Junction - Sector 2",
             latitude=10.9601,
@@ -247,8 +259,8 @@ def serve_frontend():
                     <div>
                         <div class="flex items-center space-x-2">
                             <h2 class="font-extrabold text-base tracking-wide text-white">நான்காம் காவல் நண்பன்</h2>
-                            <span class="text-xs font-bold text-amber-300 bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 rounded">NAANGHAM KAAVAL NANBAN</span>
-                            <span id="grid-status-badge" class="text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 transition-all">
+                            <span class="text-xs font-bold text-amber-300 bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 rounded">COMMAND CENTER</span>
+                            <span id="grid-status-badge" class="text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1">
                                 <span id="grid-dot" class="w-2 h-2 rounded-full"></span> <span id="grid-text">CONNECTING...</span>
                             </span>
                         </div>
@@ -257,6 +269,9 @@ def serve_frontend():
                 </div>
 
                 <div class="flex items-center space-x-3">
+                    <button onclick="resetDatabase()" class="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-400/40 text-blue-300 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-rotate-right"></i> Reset & Spawn Active
+                    </button>
                     <button onclick="simulateAITrigger()" class="bg-red-700/30 hover:bg-red-700/50 border border-amber-400/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
                         <i class="fa-solid fa-satellite-dish text-red-400"></i> Simulate AI Hazard
                     </button>
@@ -318,11 +333,10 @@ def serve_frontend():
                 <div class="lg:col-span-8 flex flex-col gap-5">
                     <div class="bg-[#0d182e] border border-amber-500/30 rounded-xl p-3 flex flex-col relative min-h-[400px] shadow-lg">
                         <div class="flex justify-between items-center mb-2 px-1">
-                            <span class="text-xs font-bold uppercase tracking-wider text-amber-400"><i class="fa-solid fa-map-location-dot text-red-500 mr-1.5"></i>TN Police Geo-Radar Grid (Live Model Sync)</span>
+                            <span class="text-xs font-bold uppercase tracking-wider text-amber-400"><i class="fa-solid fa-map-location-dot text-red-500 mr-1.5"></i>TN Police Geo-Radar Grid (Live Officer Tracking)</span>
                             <div class="flex items-center gap-3 text-[11px]">
-                                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> Critical</span>
-                                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> High</span>
-                                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Cleared</span>
+                                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> Hazard</span>
+                                <span class="flex items-center gap-1"><i class="fa-solid fa-user-shield text-blue-400"></i> Dispatched Officer Unit</span>
                             </div>
                         </div>
                         <div id="map" class="w-full h-[400px] rounded-lg border border-amber-500/20 z-10"></div>
@@ -424,29 +438,19 @@ def serve_frontend():
             let tempRegData = {};
             let activeResolvingId = null;
 
-            // --- ULTRA-FAST 2-SECOND POLLING FOR INSTANT APP/WEB SYNC ---
             setInterval(async () => {
-                const badge = document.getElementById('grid-status-badge');
-                const dot = document.getElementById('grid-dot');
-                const text = document.getElementById('grid-text');
-                try {
-                    const res = await fetch('/blockades/', { method: 'HEAD' });
-                    if (res.ok) {
-                        badge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
-                        dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
-                        text.innerText = 'SECURE GRID LIVE';
-                        if (authToken && !document.getElementById('dashboard').classList.contains('hidden')) {
-                            loadBlockades();
-                            loadNotifications();
-                            if (authToken.toUpperCase() === 'TN-ADMIN-01') loadAdminPanelData();
-                        }
-                    } else { throw new Error(); }
-                } catch (e) {
-                    badge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 bg-red-500/20 border border-red-500/40 text-red-400';
-                    dot.className = 'w-2 h-2 rounded-full bg-red-500';
-                    text.innerText = 'SECURE GRID OFFLINE';
+                if (authToken && !document.getElementById('dashboard').classList.contains('hidden')) {
+                    loadBlockades();
+                    loadNotifications();
+                    if (authToken.toUpperCase() === 'TN-ADMIN-01') loadAdminPanelData();
                 }
             }, 2000);
+
+            async function resetDatabase() {
+                await fetch('/blockades/reset-all', { method: 'POST' });
+                loadBlockades();
+                alert('Database reset! A fresh active incident has been spawned.');
+            }
 
             function toggleProfileMenu() {
                 const dropdown = document.getElementById('profile-dropdown');
@@ -477,17 +481,13 @@ def serve_frontend():
                 document.getElementById('profile-modal').classList.remove('hidden');
             }
 
-            function closeProfileModal() {
-                document.getElementById('profile-modal').classList.add('hidden');
-            }
+            function closeProfileModal() { document.getElementById('profile-modal').classList.add('hidden'); }
 
             function previewAvatar(e) {
                 const file = e.target.files[0];
                 if (file) {
                     const reader = new FileReader();
-                    reader.onload = function(evt) {
-                        document.getElementById('profile-avatar-preview').src = evt.target.result;
-                    }
+                    reader.onload = function(evt) { document.getElementById('profile-avatar-preview').src = evt.target.result; }
                     reader.readAsDataURL(file);
                 }
             }
@@ -504,18 +504,12 @@ def serve_frontend():
                 if (photoFile) formData.append('file', photoFile);
 
                 try {
-                    const res = await fetch('/api/profile', {
-                        method: 'PUT',
-                        headers: { 'Authorization': 'Bearer ' + authToken },
-                        body: formData
-                    });
+                    const res = await fetch('/api/profile', { method: 'PUT', headers: { 'Authorization': 'Bearer ' + authToken }, body: formData });
                     if (res.ok) {
                         const msg = document.getElementById('profile-msg');
                         msg.innerText = 'Profile updated successfully!';
                         msg.classList.remove('hidden');
                         setTimeout(() => { msg.classList.add('hidden'); closeProfileModal(); }, 1500);
-                    } else {
-                        alert('Failed to update profile.');
                     }
                 } catch (err) { alert('Error: ' + err.message); }
             }
@@ -546,18 +540,13 @@ def serve_frontend():
                                         <p class="text-[11px] text-slate-300">${b.notes || 'No notes'}</p>
                                     </div>
                                     ${b.clearance_photo ? `<img src="${b.clearance_photo}" class="w-16 h-16 object-cover rounded-lg border border-emerald-500/40 shrink-0">` : ''}
-                                </div>
-                            `;
+                                </div>`;
                         });
                     }
-                } catch (e) {
-                    list.innerHTML = '<p class="text-xs text-red-400 text-center py-4">Failed to load clearances.</p>';
-                }
+                } catch (e) { list.innerHTML = '<p class="text-xs text-red-400 text-center py-4">Failed to load clearances.</p>'; }
             }
 
-            function closeClearancesModal() {
-                document.getElementById('clearances-modal').classList.add('hidden');
-            }
+            function closeClearancesModal() { document.getElementById('clearances-modal').classList.add('hidden'); }
 
             function switchTab(tab) {
                 const loginTab = document.getElementById('tab-login');
@@ -568,13 +557,11 @@ def serve_frontend():
                 if (tab === 'login') {
                     loginTab.className = 'py-2 text-xs font-bold rounded-lg bg-amber-500 text-slate-950 transition cursor-pointer';
                     regTab.className = 'py-2 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition cursor-pointer';
-                    loginForm.classList.remove('hidden');
-                    regForm.classList.add('hidden');
+                    loginForm.classList.remove('hidden'); regForm.classList.add('hidden');
                 } else {
                     regTab.className = 'py-2 text-xs font-bold rounded-lg bg-amber-500 text-slate-950 transition cursor-pointer';
                     loginTab.className = 'py-2 text-xs font-bold rounded-lg text-slate-300 hover:text-white transition cursor-pointer';
-                    regForm.classList.remove('hidden');
-                    loginForm.classList.add('hidden');
+                    regForm.classList.remove('hidden'); loginForm.classList.add('hidden');
                 }
             }
 
@@ -588,20 +575,13 @@ def serve_frontend():
 
                 if (!name || !badge || !mobile || !email || !password) {
                     errDiv.innerText = 'Please fill in all officer registration fields.';
-                    errDiv.classList.remove('hidden');
-                    return;
+                    errDiv.classList.remove('hidden'); return;
                 }
                 errDiv.classList.add('hidden');
-
                 tempRegData = { name, badge_number: badge, mobile, email, password };
                 generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
 
-                await fetch('/auth/request-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, mobile, otp: generatedOTP })
-                });
-
+                await fetch('/auth/request-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, mobile, otp: generatedOTP }) });
                 document.getElementById('reg-step-1').classList.add('hidden');
                 document.getElementById('reg-step-2').classList.remove('hidden');
                 document.getElementById('otp-hint').innerText = `[SIMULATED SMS/MAIL OTP]: ${generatedOTP}`;
@@ -610,38 +590,22 @@ def serve_frontend():
             async function verifyAndRegister() {
                 const enteredOTP = document.getElementById('reg-otp').value;
                 const errDiv = document.getElementById('reg-error');
-
                 if (enteredOTP !== generatedOTP) {
-                    errDiv.innerText = 'Invalid OTP code. Please check simulation hint.';
-                    errDiv.classList.remove('hidden');
-                    return;
+                    errDiv.innerText = 'Invalid OTP code.'; errDiv.classList.remove('hidden'); return;
                 }
-
-                const res = await fetch('/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(tempRegData)
-                });
-
+                const res = await fetch('/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tempRegData) });
                 if (!res.ok) {
                     const err = await res.json();
-                    errDiv.innerText = err.detail || 'Registration failed.';
-                    errDiv.classList.remove('hidden');
-                    return;
+                    errDiv.innerText = err.detail || 'Registration failed.'; errDiv.classList.remove('hidden'); return;
                 }
-
                 alert('Officer account registered successfully! Awaiting Admin approval.');
-                switchTab('login');
-                document.getElementById('login-username').value = tempRegData.badge_number;
+                switchTab('login'); document.getElementById('login-username').value = tempRegData.badge_number;
             }
 
             function initMap() {
                 if (map) return;
-                map = L.map('map').setView([10.9601, 79.3845], 10);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19,
-                    attribution: '© OpenStreetMap | நான்காம் காவல் நண்பன்'
-                }).addTo(map);
+                map = L.map('map').setView([10.9601, 79.3845], 11);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
                 markersLayer = L.layerGroup().addTo(map);
             }
 
@@ -656,12 +620,7 @@ def serve_frontend():
                     document.getElementById('admin-panel').classList.remove('hidden');
                     loadAdminPanelData();
                 }
-
-                setTimeout(() => {
-                    initMap();
-                    loadBlockades();
-                    loadNotifications();
-                }, 100);
+                setTimeout(() => { initMap(); loadBlockades(); loadNotifications(); }, 100);
             }
 
             async function loadAdminPanelData() {
@@ -680,8 +639,7 @@ def serve_frontend():
                                         <span class="text-[10px] px-2 py-0.5 rounded font-bold ${badgeStyle}">${o.status}</span>
                                         ${o.status === 'PENDING APPROVAL' ? `<button onclick="approveOfficer('${o.badge_number}')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] px-2 py-1 rounded cursor-pointer">Approve</button>` : ''}
                                     </div>
-                                </div>
-                            `;
+                                </div>`;
                         });
                     }
 
@@ -699,8 +657,7 @@ def serve_frontend():
                                     <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 gap-2">
                                         <div>📍 <strong class="text-white">${b.location_name}</strong><br><span class="text-[10px] text-amber-300">Resolved by: ${b.resolved_by || 'Officer'}</span></div>
                                         ${b.clearance_photo ? `<a href="${b.clearance_photo}" target="_blank"><img src="${b.clearance_photo}" class="w-12 h-12 object-cover rounded border border-emerald-500/40 shrink-0"></a>` : '<span class="text-[10px] text-slate-500">No Photo</span>'}
-                                    </div>
-                                `;
+                                    </div>`;
                             });
                         }
                     }
@@ -708,10 +665,7 @@ def serve_frontend():
             }
 
             async function approveOfficer(badge) {
-                await fetch(`/admin/officers/${badge}/approve`, {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + authToken }
-                });
+                await fetch(`/admin/officers/${badge}/approve`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
                 loadAdminPanelData();
             }
 
@@ -722,12 +676,8 @@ def serve_frontend():
                 const formData = new URLSearchParams({ username, password });
 
                 try {
-                    const res = await fetch('/auth/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: formData
-                    });
-                    if (!res.ok) throw new Error('Invalid credentials');
+                    const res = await fetch('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formData });
+                    if (!res.ok) throw new Error();
                     const data = await res.json();
                     authToken = data.access_token;
                     localStorage.setItem('token_8002', authToken);
@@ -740,12 +690,8 @@ def serve_frontend():
             }
 
             async function simulateAITrigger() {
-                await fetch('/blockades/simulate-ai', {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + authToken }
-                });
-                loadBlockades();
-                loadNotifications();
+                await fetch('/blockades/simulate-ai', { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
+                loadBlockades(); loadNotifications();
             }
 
             async function loadBlockades() {
@@ -754,27 +700,25 @@ def serve_frontend():
                 const container = document.getElementById('blockade-list');
                 if (!container) return;
                 container.innerHTML = '';
-
                 if (markersLayer) markersLayer.clearLayers();
 
                 data.slice().reverse().forEach(b => {
                     const isResolved = b.status === 'RESOLVED';
-                    const badgeColor = b.severity === 'CRITICAL' ? 'bg-red-600/25 text-red-300 border-red-500/40' :
-                                       b.severity === 'HIGH' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
-                                       'bg-blue-600/25 text-blue-300 border-blue-500/40';
+                    const isAssignedOrArrived = b.status === 'ASSIGNED' || b.status === 'ARRIVED';
+                    const badgeColor = b.severity === 'CRITICAL' ? 'bg-red-600/25 text-red-300 border-red-500/40' : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
 
                     let imgHtml = b.image_url ? `<img src="${b.image_url}" class="w-full h-28 object-cover rounded border border-slate-700 mt-1 mb-1">` : '';
                     let clearanceHtml = b.clearance_photo ? `
                         <div class="mt-1 p-1.5 bg-emerald-950/40 border border-emerald-500/30 rounded">
-                            <div class="text-[10px] text-emerald-400 font-bold mb-1"><i class="fa-solid fa-camera"></i> Live Clearance Verified (By: ${b.resolved_by || 'Officer'}):</div>
+                            <div class="text-[10px] text-emerald-400 font-bold mb-1"><i class="fa-solid fa-camera"></i> Verified By: ${b.resolved_by || 'Officer'}:</div>
                             <img src="${b.clearance_photo}" class="w-full h-20 object-cover rounded">
                         </div>` : '';
 
                     container.innerHTML += `
                         <div class="bg-[#070e1c] border ${isResolved ? 'border-emerald-500/40' : 'border-amber-500/25'} p-3 rounded-lg space-y-2">
                             <div class="flex justify-between items-start">
-                                <div onclick="focusMap(${b.latitude}, ${b.longitude})" class="cursor-pointer">
-                                    <h4 class="font-bold text-xs text-white hover:text-amber-400">${b.location_name}</h4>
+                                <div>
+                                    <h4 class="font-bold text-xs text-white">${b.location_name}</h4>
                                     <p class="text-[11px] text-slate-400">${b.notes || ''}</p>
                                 </div>
                                 <span class="text-[10px] font-bold px-2 py-0.5 border rounded ${badgeColor}">${b.severity}</span>
@@ -783,25 +727,31 @@ def serve_frontend():
                             ${clearanceHtml}
                             <div class="flex justify-between items-center pt-1 border-t border-slate-800/80">
                                 <span class="text-[11px] text-slate-400">Status: <strong class="${isResolved ? 'text-emerald-400' : 'text-amber-300'}">${b.status}</strong></span>
-                                <div class="space-x-1.5">
-                                    ${b.status === 'ACTIVE' ? `<button onclick="assignUnit(${b.id})" class="bg-blue-700/40 hover:bg-blue-700/60 border border-blue-400/30 text-blue-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Dispatch</button>` : ''}
-                                    ${b.status === 'ASSIGNED' ? `<button onclick="markArrived(${b.id})" class="bg-amber-700/40 hover:bg-amber-700/60 border border-amber-400/30 text-amber-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Arrived</button>` : ''}
-                                    ${b.status === 'ARRIVED' ? `<button onclick="openPhotoModal(${b.id})" class="bg-emerald-700/40 hover:bg-emerald-700/60 border border-emerald-400/30 text-emerald-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Live Camera Clear</button>` : ''}
-                                </div>
+                                <span class="text-[10px] text-blue-400 font-mono">${isAssignedOrArrived ? 'Unit Dispatched & Tracked 🛡️' : ''}</span>
                             </div>
                         </div>`;
 
-                    if (markersLayer && b.latitude && b.longitude) {
-                        const markerColor = isResolved ? '#10b981' : (b.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b');
-                        const circle = L.circleMarker([b.latitude, b.longitude], {
-                            radius: 9, fillColor: markerColor, color: '#fbbf24', weight: 2, opacity: 1, fillOpacity: 0.9
-                        }).bindPopup(`<b>${b.location_name}</b><br>Severity: ${b.severity}<br>Status: ${b.status}`);
-                        markersLayer.addLayer(circle);
+                    if (markersLayer) {
+                        const markerColor = isResolved ? '#10b981' : '#ef4444';
+                        const hazardCircle = L.circleMarker([b.latitude, b.longitude], {
+                            radius: 10, fillColor: markerColor, color: '#fbbf24', weight: 2, opacity: 1, fillOpacity: 0.9
+                        }).bindPopup(`<b>Hazard: ${b.location_name}</b><br>Status: ${b.status}`);
+                        markersLayer.addLayer(hazardCircle);
+
+                        if (isAssignedOrArrived && b.officer_lat && b.officer_lng) {
+                            const officerIcon = L.divIcon({
+                                className: 'custom-officer-marker',
+                                html: '<div style="background: #1d4ed8; border: 2px solid #fbbf24; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 12px rgba(59,130,246,0.9);"><i class="fa-solid fa-user-shield text-amber-300 text-xs"></i></div>',
+                                iconSize: [32, 32],
+                                iconAnchor: [16, 16]
+                            });
+                            const officerMarker = L.marker([b.officer_lat, b.officer_lng], { icon: officerIcon })
+                                .bindPopup(`<b>Dispatched Unit Active</b><br>Officer En Route`);
+                            markersLayer.addLayer(officerMarker);
+                        }
                     }
                 });
             }
-
-            function focusMap(lat, lng) { if (map) map.setView([lat, lng], 14); }
 
             async function loadNotifications() {
                 const res = await fetch('/notifications/', { headers: { 'Authorization': 'Bearer ' + authToken } });
@@ -810,58 +760,8 @@ def serve_frontend():
                 if (!box) return;
                 box.innerHTML = '';
                 data.slice().reverse().forEach(n => {
-                    let thumb = n.image_thumb ? `<img src="${n.image_thumb}" class="w-12 h-10 object-cover rounded inline-block ml-2 border border-slate-700">` : '';
-                    box.innerHTML += `<div class="flex items-center justify-between border-b border-slate-800/50 pb-1"><div><span class="text-amber-400/80">[${new Date(n.created_at).toLocaleTimeString()}]</span> ${n.message}</div>${thumb}</div>`;
+                    box.innerHTML += `<div class="border-b border-slate-800/50 pb-1"><span class="text-amber-400/80">[${new Date(n.created_at).toLocaleTimeString()}]</span> ${n.message}</div>`;
                 });
-            }
-
-            async function assignUnit(id) {
-                await fetch('/blockades/' + id + '/assign', { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
-                loadBlockades(); loadNotifications();
-            }
-
-            async function markArrived(id) {
-                await fetch('/blockades/' + id + '/arrived', { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
-                loadBlockades(); loadNotifications();
-            }
-
-            function openPhotoModal(id) {
-                activeResolvingId = id;
-                document.getElementById('clearance-file').value = '';
-                document.getElementById('photo-modal').classList.remove('hidden');
-            }
-
-            function closePhotoModal() {
-                document.getElementById('photo-modal').classList.add('hidden');
-                activeResolvingId = null;
-            }
-
-            async function submitClearancePhoto() {
-                if (!activeResolvingId) return;
-                const fileInput = document.getElementById('clearance-file');
-                if (!fileInput.files[0]) {
-                    alert('Please capture a live photo to verify clearance.');
-                    return;
-                }
-
-                const formData = new FormData();
-                formData.append('file', fileInput.files[0]);
-
-                try {
-                    const res = await fetch('/blockades/' + activeResolvingId + '/resolve-photo', {
-                        method: 'POST',
-                        headers: { 'Authorization': 'Bearer ' + authToken },
-                        body: formData
-                    });
-
-                    if (!res.ok) throw new Error('Failed to upload clearance photo');
-
-                    closePhotoModal();
-                    loadBlockades();
-                    loadNotifications();
-                } catch (err) {
-                    alert('Error uploading photo: ' + err.message);
-                }
             }
 
             async function clearResolved() {
@@ -879,15 +779,7 @@ def serve_frontend():
 def register_officer(reg: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter((User.badge_number == reg.badge_number) | (User.username == reg.badge_number)).first()
     if existing: raise HTTPException(status_code=400, detail="Officer already registered.")
-    db.add(User(
-        username=reg.badge_number,
-        password=reg.password,
-        name=reg.name,
-        email=reg.email,
-        mobile=reg.mobile,
-        badge_number=reg.badge_number,
-        status="PENDING APPROVAL"
-    ))
+    db.add(User(username=reg.badge_number, password=reg.password, name=reg.name, email=reg.email, mobile=reg.mobile, badge_number=reg.badge_number, status="PENDING APPROVAL"))
     db.commit()
     return {"message": "Success"}
 
@@ -902,16 +794,14 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 @app.get("/admin/officers", tags=["Admin Control"])
 def get_admin_officers(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    if token != "TN-ADMIN-01":
-        raise HTTPException(status_code=403, detail="Unauthorized")
+    if token != "TN-ADMIN-01": raise HTTPException(status_code=403)
     return db.query(User).all()
 
 @app.post("/admin/officers/{badge_number}/approve", tags=["Admin Control"])
 def approve_officer(badge_number: str, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    if token != "TN-ADMIN-01":
-        raise HTTPException(status_code=403, detail="Unauthorized")
+    if token != "TN-ADMIN-01": raise HTTPException(status_code=403)
     officer = db.query(User).filter(User.badge_number == badge_number).first()
-    if not officer: raise HTTPException(status_code=404, detail="Officer not found")
+    if not officer: raise HTTPException(status_code=404)
     officer.status = "ACTIVE"
     db.commit()
     return {"message": f"Officer {badge_number} approved"}
@@ -919,53 +809,30 @@ def approve_officer(badge_number: str, token: str = Depends(oauth2_scheme), db: 
 @app.get("/api/profile", tags=["Officer Profile"])
 def get_profile(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == token).first()
-    if not user: raise HTTPException(status_code=404, detail="User not found")
-    return {
-        "name": user.name,
-        "email": user.email,
-        "mobile": user.mobile,
-        "badge_number": user.badge_number,
-        "profile_photo": user.profile_photo
-    }
+    if not user: raise HTTPException(status_code=404)
+    return {"name": user.name, "email": user.email, "mobile": user.mobile, "badge_number": user.badge_number, "profile_photo": user.profile_photo}
 
 @app.put("/api/profile", tags=["Officer Profile"])
-async def update_profile(
-    name: str = Form(...),
-    email: str = Form(...),
-    mobile: str = Form(...),
-    password: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-):
+async def update_profile(name: str = Form(...), email: str = Form(...), mobile: str = Form(...), password: Optional[str] = Form(None), file: Optional[UploadFile] = File(None), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == token).first()
-    if not user: raise HTTPException(status_code=404, detail="User not found")
-    
-    user.name = name
-    user.email = email
-    user.mobile = mobile
+    if not user: raise HTTPException(status_code=404)
+    user.name = name; user.email = email; user.mobile = mobile
     if password: user.password = password
     if file:
         file_bytes = await file.read()
         base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
         user.profile_photo = f"data:{file.content_type or 'image/jpeg'};base64,{base64_encoded}"
-    
     db.commit()
     return {"message": "Profile updated successfully"}
 
 @app.get("/api/my-clearances", tags=["Officer Profile"])
 def get_my_clearances(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    clearances = db.query(Blockade).filter(
-        Blockade.status == "RESOLVED",
-        Blockade.resolved_by == token
-    ).order_by(Blockade.id.desc()).limit(10).all()
-    return clearances
+    return db.query(Blockade).filter(Blockade.status == "RESOLVED", Blockade.resolved_by == token).order_by(Blockade.id.desc()).limit(10).all()
 
 @app.head("/blockades/", tags=["Tactical Blockades"])
 @app.get("/blockades/", tags=["Tactical Blockades"])
 def get_blockades(db: Session = Depends(get_db)): return db.query(Blockade).all()
 
-# --- DATABASE RESET ENDPOINT TO CLEAR STUCK INCIDENTS ---
 @app.post("/blockades/reset-all", tags=["Tactical Blockades"])
 def reset_all_blockades(db: Session = Depends(get_db)):
     db.query(Blockade).delete()
@@ -979,46 +846,18 @@ def reset_all_blockades(db: Session = Depends(get_db)):
         image_url="https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=400&q=80"
     ))
     db.commit()
-    return {"message": "Database reset successfully. All incidents set to active."}
-
-@app.post("/api/edge-trigger", tags=["Live Project Model Integration"])
-def trigger_from_project_model(payload: EdgeModelTrigger, db: Session = Depends(get_db)):
-    if payload.api_key != EDGE_API_KEY:
-        raise HTTPException(status_code=403, detail="Invalid Edge API Key")
-    
-    img_data = payload.image_base64
-    if img_data and not img_data.startswith("data:image"):
-        img_data = f"data:image/jpeg;base64,{img_data}"
-
-    new_b = Blockade(
-        location_name=payload.location_name,
-        latitude=payload.latitude,
-        longitude=payload.longitude,
-        severity=payload.severity,
-        status="ACTIVE",
-        notes=payload.notes,
-        image_url=img_data
-    )
-    db.add(new_b)
-    db.add(Notification(
-        message=f"[LIVE MODEL ALERT] {payload.notes} @ {payload.location_name}",
-        image_thumb=img_data
-    ))
-    db.commit()
-    db.refresh(new_b)
-    return {"status": "success", "incident_id": new_b.id}
+    return {"message": "Database reset successfully. Fresh active incident spawned."}
 
 @app.post("/blockades/simulate-ai", tags=["Edge-AI Simulation"])
 def simulate_ai_trigger(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     samples = [
-        ("Mahamaham Tank West Gate", 10.9576, 79.3789, "CRITICAL", "YOLO-v8 Edge Cam: Crowd surge & road obstruction detected", "https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=400&q=80"),
-        ("Mayiladuthurai State Highway", 11.1018, 79.6524, "HIGH", "AI Acoustic Sensor: Emergency vehicle bottleneck", "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=400&q=80"),
-        ("Trichy-Chennai NH-45 Sector 9", 10.8254, 78.6921, "MEDIUM", "Speed Radar: Sudden traffic halt detected", "https://images.unsplash.com/photo-1519003722824-194d4455a60c?w=400&q=80")
+        ("Mahamaham Tank West Gate", 10.9576, 79.3789, "CRITICAL", "YOLO-v8 Edge Cam: Crowd surge detected", "https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=400&q=80"),
+        ("Mayiladuthurai State Highway", 11.1018, 79.6524, "HIGH", "Acoustic Sensor: Emergency vehicle bottleneck", "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=400&q=80")
     ]
     loc, lat, lng, sev, note, img = random.choice(samples)
     new_b = Blockade(location_name=loc, latitude=lat, longitude=lng, severity=sev, status="ACTIVE", notes=note, image_url=img)
     db.add(new_b)
-    db.add(Notification(message=f"[EDGE-AI YOLO] {note} @ {loc}", image_thumb=img))
+    db.add(Notification(message=f"[EDGE-AI] {note} @ {loc}", image_thumb=img))
     db.commit()
     return new_b
 
@@ -1027,6 +866,8 @@ def assign_blockade(blockade_id: int, token: str = Depends(oauth2_scheme), db: S
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b: raise HTTPException(status_code=404)
     b.status = "ASSIGNED"
+    b.officer_lat = b.latitude + 0.012
+    b.officer_lng = b.longitude + 0.012
     db.add(Notification(message=f"[DISPATCH] Unit assigned to {b.location_name}", image_thumb=b.image_url))
     db.commit()
     return {"status": b.status}
@@ -1036,24 +877,32 @@ def mark_arrived(blockade_id: int, token: str = Depends(oauth2_scheme), db: Sess
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b: raise HTTPException(status_code=404)
     b.status = "ARRIVED"
+    b.officer_lat = b.latitude
+    b.officer_lng = b.longitude
     db.add(Notification(message=f"[ON SCENE] Officer arrived at {b.location_name}", image_thumb=b.image_url))
     db.commit()
     return {"status": b.status}
 
+@app.post("/blockades/{blockade_id}/telemetry", tags=["Officer Tracking"])
+def update_officer_telemetry(blockade_id: int, data: TelemetryUpdate, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
+    if not b: raise HTTPException(status_code=404)
+    b.officer_lat = data.latitude
+    b.officer_lng = data.longitude
+    db.commit()
+    return {"status": "telemetry updated"}
+
 @app.post("/blockades/{blockade_id}/resolve-photo", tags=["Tactical Blockades"])
 async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
-    if not b: raise HTTPException(status_code=404, detail="Blockade not found")
-    
+    if not b: raise HTTPException(status_code=404)
     file_bytes = await file.read()
     base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
-    mime_type = file.content_type or "image/jpeg"
-    data_uri = f"data:{mime_type};base64,{base64_encoded}"
-
+    data_uri = f"data:{file.content_type or 'image/jpeg'};base64,{base64_encoded}"
     b.status = "RESOLVED"
     b.clearance_photo = data_uri
     b.resolved_by = token
-    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name} by officer {token}", image_thumb=data_uri))
+    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name}", image_thumb=data_uri))
     db.commit()
     return {"message": "Resolved with photo"}
 
@@ -1061,15 +910,13 @@ async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), tok
 def resolve_with_photo_base64(blockade_id: int, payload: dict, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b: raise HTTPException(status_code=404)
-    
     img_data = payload.get("image_data") or payload.get("file")
     if img_data and not img_data.startswith("data:image"):
         img_data = f"data:image/jpeg;base64,{img_data}"
-
     b.status = "RESOLVED"
     b.clearance_photo = img_data
     b.resolved_by = token
-    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name} by officer {token}", image_thumb=b.clearance_photo))
+    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name}", image_thumb=b.clearance_photo))
     db.commit()
     return {"message": "Resolved via base64 photo"}
 
