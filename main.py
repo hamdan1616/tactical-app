@@ -27,8 +27,8 @@ class User(Base):
     email = Column(String)
     mobile = Column(String)
     badge_number = Column(String, unique=True, index=True)
-    profile_photo = Column(String, nullable=True) # Base64 Profile Picture
-    status = Column(String, default="ACTIVE")     # 'ACTIVE' or 'PENDING APPROVAL'
+    profile_photo = Column(String, nullable=True)
+    status = Column(String, default="ACTIVE") # 'ACTIVE' or 'PENDING APPROVAL'
 
 class Blockade(Base):
     __tablename__ = "blockades"
@@ -39,9 +39,9 @@ class Blockade(Base):
     severity = Column(String)
     status = Column(String, default="ACTIVE")
     notes = Column(String, nullable=True)
-    image_url = Column(String, nullable=True)       # Stores AI Hazard Snapshot / Base64 Data URI
-    clearance_photo = Column(String, nullable=True) # Stores Live Officer Clearance Photo
-    resolved_by = Column(String, nullable=True)     # Badge/Username of the officer who resolved it
+    image_url = Column(String, nullable=True)
+    clearance_photo = Column(String, nullable=True)
+    resolved_by = Column(String, nullable=True)
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -52,7 +52,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="22.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="24.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,8 +63,6 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
-
-# Secret API Key for your YOLO / ESP32 Project Model
 EDGE_API_KEY = "BLU-GUARD-2026"
 
 def get_db():
@@ -285,7 +283,7 @@ def serve_frontend():
                 </div>
             </header>
 
-            <!-- ADMIN SUPERVISOR OVERSIGHT PANEL (Visible only to TN-ADMIN-01) -->
+            <!-- ADMIN SUPERVISOR OVERSIGHT PANEL -->
             <div id="admin-panel" class="hidden bg-[#0d182e] border-b-2 border-amber-500/30 p-4 px-6">
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400 flex items-center gap-2">
@@ -296,15 +294,11 @@ def serve_frontend():
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-60 overflow-y-auto">
                     <div class="bg-[#070e1c] border border-amber-500/20 rounded-lg p-3">
                         <h4 class="text-xs font-bold text-slate-300 mb-2">Registered Officer Accounts & Approvals</h4>
-                        <div id="admin-officers-list" class="space-y-2 text-xs text-slate-300">
-                            <!-- Populated dynamically -->
-                        </div>
+                        <div id="admin-officers-list" class="space-y-2 text-xs text-slate-300"></div>
                     </div>
                     <div class="bg-[#070e1c] border border-emerald-500/20 rounded-lg p-3">
                         <h4 class="text-xs font-bold text-emerald-400 mb-2">All Department Verified Clearances & Proof Photos</h4>
-                        <div id="admin-clearances-list" class="space-y-2 text-xs text-slate-300">
-                            <!-- Populated dynamically -->
-                        </div>
+                        <div id="admin-clearances-list" class="space-y-2 text-xs text-slate-300"></div>
                     </div>
                 </div>
             </div>
@@ -399,9 +393,7 @@ def serve_frontend():
                     <h3 class="font-bold text-sm text-emerald-400 uppercase"><i class="fa-solid fa-clipboard-check mr-2"></i>My Last 10 Blockade Clearances</h3>
                     <button onclick="closeClearancesModal()" class="text-slate-400 hover:text-white text-xs cursor-pointer"><i class="fa-solid fa-xmark text-base"></i></button>
                 </div>
-                <div id="clearances-list" class="flex-1 overflow-y-auto space-y-3 pr-1">
-                    <!-- Populated dynamically -->
-                </div>
+                <div id="clearances-list" class="flex-1 overflow-y-auto space-y-3 pr-1"></div>
             </div>
         </div>
 
@@ -432,7 +424,7 @@ def serve_frontend():
             let tempRegData = {};
             let activeResolvingId = null;
 
-            // --- AUTO-POLLING FOR LIVE PROJECT MODEL UPDATES & HEARTBEAT ---
+            // --- HIGH-FREQUENCY POLLING FOR INSTANT APP/WEB SYNC ---
             setInterval(async () => {
                 const badge = document.getElementById('grid-status-badge');
                 const dot = document.getElementById('grid-dot');
@@ -446,6 +438,7 @@ def serve_frontend():
                         if (authToken && !document.getElementById('dashboard').classList.contains('hidden')) {
                             loadBlockades();
                             loadNotifications();
+                            if (authToken.toUpperCase() === 'TN-ADMIN-01') loadAdminPanelData();
                         }
                     } else { throw new Error(); }
                 } catch (e) {
@@ -453,7 +446,7 @@ def serve_frontend():
                     dot.className = 'w-2 h-2 rounded-full bg-red-500';
                     text.innerText = 'SECURE GRID OFFLINE';
                 }
-            }, 3500);
+            }, 2000); // Poll every 2 seconds for ultra-fast sync
 
             function toggleProfileMenu() {
                 const dropdown = document.getElementById('profile-dropdown');
@@ -633,7 +626,7 @@ def serve_frontend():
                 if (!res.ok) {
                     const err = await res.json();
                     errDiv.innerText = err.detail || 'Registration failed.';
-                    errDiv.classList.add('hidden');
+                    errDiv.classList.remove('hidden');
                     return;
                 }
 
@@ -659,7 +652,6 @@ def serve_frontend():
                 document.getElementById('dashboard').classList.remove('hidden');
                 document.getElementById('user-badge').innerText = authToken;
 
-                // Check if logged in as Admin
                 if (authToken.toUpperCase() === 'TN-ADMIN-01') {
                     document.getElementById('admin-panel').classList.remove('hidden');
                     loadAdminPanelData();
@@ -674,7 +666,6 @@ def serve_frontend():
 
             async function loadAdminPanelData() {
                 try {
-                    // Load Officers
                     const offRes = await fetch('/admin/officers', { headers: { 'Authorization': 'Bearer ' + authToken } });
                     if (offRes.ok) {
                         const officers = await offRes.json();
@@ -694,7 +685,6 @@ def serve_frontend():
                         });
                     }
 
-                    // Load Clearances
                     const res = await fetch('/blockades/');
                     const data = await res.json();
                     const container = document.getElementById('admin-clearances-list');
@@ -906,7 +896,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user or user.password != form_data.password: raise HTTPException(status_code=401)
     return {"access_token": user.username, "token_type": "bearer"}
 
-# --- ADMIN OVERSIGHT & APPROVAL API ENDPOINTS ---
 @app.get("/admin/officers", tags=["Admin Control"])
 def get_admin_officers(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     if token != "TN-ADMIN-01":
@@ -918,13 +907,11 @@ def approve_officer(badge_number: str, token: str = Depends(oauth2_scheme), db: 
     if token != "TN-ADMIN-01":
         raise HTTPException(status_code=403, detail="Unauthorized")
     officer = db.query(User).filter(User.badge_number == badge_number).first()
-    if not officer:
-        raise HTTPException(status_code=404, detail="Officer not found")
+    if not officer: raise HTTPException(status_code=404, detail="Officer not found")
     officer.status = "ACTIVE"
     db.commit()
-    return {"message": f"Officer {badge_number} approved successfully"}
+    return {"message": f"Officer {badge_number} approved"}
 
-# --- PROFILE ENDPOINTS ---
 @app.get("/api/profile", tags=["Officer Profile"])
 def get_profile(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == token).first()
@@ -974,7 +961,6 @@ def get_my_clearances(token: str = Depends(oauth2_scheme), db: Session = Depends
 @app.get("/blockades/", tags=["Tactical Blockades"])
 def get_blockades(db: Session = Depends(get_db)): return db.query(Blockade).all()
 
-# --- LIVE PROJECT MODEL & HARDWARE ENDPOINT ---
 @app.post("/api/edge-trigger", tags=["Live Project Model Integration"])
 def trigger_from_project_model(payload: EdgeModelTrigger, db: Session = Depends(get_db)):
     if payload.api_key != EDGE_API_KEY:
@@ -1039,20 +1025,17 @@ async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), tok
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b: raise HTTPException(status_code=404, detail="Blockade not found")
     
-    try:
-        file_bytes = await file.read()
-        base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
-        mime_type = file.content_type or "image/jpeg"
-        data_uri = f"data:{mime_type};base64,{base64_encoded}"
+    file_bytes = await file.read()
+    base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
+    mime_type = file.content_type or "image/jpeg"
+    data_uri = f"data:{mime_type};base64,{base64_encoded}"
 
-        b.status = "RESOLVED"
-        b.clearance_photo = data_uri
-        b.resolved_by = token
-        db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name} by officer {token}", image_thumb=data_uri))
-        db.commit()
-        return {"message": "Resolved with live camera photo verification"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    b.status = "RESOLVED"
+    b.clearance_photo = data_uri
+    b.resolved_by = token
+    db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name} by officer {token}", image_thumb=data_uri))
+    db.commit()
+    return {"message": "Resolved with photo"}
 
 @app.post("/blockades/{blockade_id}/resolve-photo-base64", tags=["Tactical Blockades"])
 def resolve_with_photo_base64(blockade_id: int, payload: dict, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -1060,7 +1043,7 @@ def resolve_with_photo_base64(blockade_id: int, payload: dict, token: str = Depe
     if not b: raise HTTPException(status_code=404)
     
     b.status = "RESOLVED"
-    b.clearance_photo = payload.get("image_data")
+    b.clearance_photo = payload.get("image_data") or payload.get("file")
     b.resolved_by = token
     db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name} by officer {token}", image_thumb=b.clearance_photo))
     db.commit()
