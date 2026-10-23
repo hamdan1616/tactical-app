@@ -27,8 +27,8 @@ class User(Base):
     email = Column(String)
     mobile = Column(String)
     badge_number = Column(String, unique=True, index=True)
-    profile_photo = Column(String, nullable=True)
-    status = Column(String, default="ACTIVE") # 'ACTIVE' or 'PENDING APPROVAL'
+    profile_photo = Column(String, nullable=True) # Base64 Profile Picture
+    status = Column(String, default="ACTIVE")     # 'ACTIVE' or 'PENDING APPROVAL'
 
 class Blockade(Base):
     __tablename__ = "blockades"
@@ -39,9 +39,9 @@ class Blockade(Base):
     severity = Column(String)
     status = Column(String, default="ACTIVE")
     notes = Column(String, nullable=True)
-    image_url = Column(String, nullable=True)
-    clearance_photo = Column(String, nullable=True)
-    resolved_by = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)       # Stores AI Hazard Snapshot / Base64 Data URI
+    clearance_photo = Column(String, nullable=True) # Stores Live Officer Clearance Photo
+    resolved_by = Column(String, nullable=True)     # Badge/Username of the officer who resolved it
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -52,7 +52,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="24.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="25.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,6 +63,8 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+# Secret API Key for your YOLO / ESP32 Project Model
 EDGE_API_KEY = "BLU-GUARD-2026"
 
 def get_db():
@@ -424,7 +426,7 @@ def serve_frontend():
             let tempRegData = {};
             let activeResolvingId = null;
 
-            // --- HIGH-FREQUENCY POLLING FOR INSTANT APP/WEB SYNC ---
+            // --- ULTRA-FAST 2-SECOND POLLING FOR INSTANT APP/WEB SYNC ---
             setInterval(async () => {
                 const badge = document.getElementById('grid-status-badge');
                 const dot = document.getElementById('grid-dot');
@@ -446,7 +448,7 @@ def serve_frontend():
                     dot.className = 'w-2 h-2 rounded-full bg-red-500';
                     text.innerText = 'SECURE GRID OFFLINE';
                 }
-            }, 2000); // Poll every 2 seconds for ultra-fast sync
+            }, 2000);
 
             function toggleProfileMenu() {
                 const dropdown = document.getElementById('profile-dropdown');
@@ -1042,8 +1044,12 @@ def resolve_with_photo_base64(blockade_id: int, payload: dict, token: str = Depe
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b: raise HTTPException(status_code=404)
     
+    img_data = payload.get("image_data") or payload.get("file")
+    if img_data and not img_data.startswith("data:image"):
+        img_data = f"data:image/jpeg;base64,{img_data}"
+
     b.status = "RESOLVED"
-    b.clearance_photo = payload.get("image_data") or payload.get("file")
+    b.clearance_photo = img_data
     b.resolved_by = token
     db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name} by officer {token}", image_thumb=b.clearance_photo))
     db.commit()
