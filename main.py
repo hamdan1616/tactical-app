@@ -101,6 +101,15 @@ def seed_initial_data():
             mobile="9876543210",
             badge_number="TN-POLICE-007"
         ))
+    if not db.query(User).filter(User.username == "TN-ADMIN-01").first():
+        db.add(User(
+            username="TN-ADMIN-01",
+            password="Admin@123",
+            name="Central Command Admin",
+            email="admin@tnpolice.gov.in",
+            mobile="9999999999",
+            badge_number="TN-ADMIN-01"
+        ))
     if db.query(Blockade).count() == 0:
         db.add(Blockade(
             location_name="Kumbakonam Bypass Junction - Sector 2",
@@ -170,7 +179,7 @@ def serve_frontend():
                 <form id="form-login" onsubmit="handleLogin(event)" class="space-y-3.5">
                     <div>
                         <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Badge ID / Username</label>
-                        <input type="text" id="login-username" required placeholder="Enter Badge ID" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400">
+                        <input type="text" id="login-username" required placeholder="Enter Badge ID (e.g. TN-ADMIN-01)" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400">
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Password</label>
@@ -272,6 +281,31 @@ def serve_frontend():
                     </div>
                 </div>
             </header>
+
+            <!-- ADMIN SUPERVISOR OVERSIGHT PANEL (Visible only to TN-ADMIN-01) -->
+            <div id="admin-panel" class="hidden bg-[#0d182e] border-b-2 border-amber-500/30 p-4 px-6">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                        <i class="fa-solid fa-shield-cat text-amber-300"></i> Central Command Supervisor: All Department Clearances & Oversight
+                    </h3>
+                    <span class="text-[11px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold">ADMIN SUPERVISOR ACCESS</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-56 overflow-y-auto">
+                    <div class="bg-[#070e1c] border border-amber-500/20 rounded-lg p-3">
+                        <h4 class="text-xs font-bold text-slate-300 mb-2">Registered Officer Status</h4>
+                        <div class="space-y-1.5 text-xs text-slate-400">
+                            <p>🛡️ Central Command Admin (TN-ADMIN-01) - Supervisor Active</p>
+                            <p>👮 Inspector Test Officer (TN-POLICE-007) - Active</p>
+                        </div>
+                    </div>
+                    <div class="bg-[#070e1c] border border-emerald-500/20 rounded-lg p-3">
+                        <h4 class="text-xs font-bold text-emerald-400 mb-2">All Department Verified Clearances</h4>
+                        <div id="admin-clearances-list" class="space-y-1.5 text-xs text-slate-300">
+                            <!-- Populated dynamically for admin -->
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 overflow-hidden">
                 <div class="lg:col-span-4 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col overflow-hidden space-y-4 shadow-lg">
@@ -622,11 +656,40 @@ def serve_frontend():
                 document.getElementById('login-modal').classList.add('hidden');
                 document.getElementById('dashboard').classList.remove('hidden');
                 document.getElementById('user-badge').innerText = authToken;
+
+                // Check if logged in as Admin
+                if (authToken.toUpperCase() === 'TN-ADMIN-01') {
+                    document.getElementById('admin-panel').classList.remove('hidden');
+                    loadAdminClearances();
+                }
+
                 setTimeout(() => {
                     initMap();
                     loadBlockades();
                     loadNotifications();
                 }, 100);
+            }
+
+            async function loadAdminClearances() {
+                try {
+                    const res = await fetch('/blockades/');
+                    const data = await res.json();
+                    const container = document.getElementById('admin-clearances-list');
+                    container.innerHTML = '';
+                    const resolved = data.filter(b => b.status === 'RESOLVED');
+                    if (resolved.length === 0) {
+                        container.innerHTML = '<p class="text-xs text-slate-500">No clearances logged yet.</p>';
+                        return;
+                    }
+                    resolved.forEach((b) => {
+                        container.innerHTML += `
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-1">
+                                <div>📍 <strong class="text-white">${b.location_name}</strong> (By: <span class="text-amber-300">${b.resolved_by || 'Officer'}</span>)</div>
+                                ${b.clearance_photo ? `<a href="${b.clearance_photo}" target="_blank" class="text-emerald-400 hover:underline text-[11px]">View Proof</a>` : ''}
+                            </div>
+                        `;
+                    });
+                } catch (e) { console.error(e); }
             }
 
             async function handleLogin(e) {
@@ -929,7 +992,7 @@ async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), tok
 
         b.status = "RESOLVED"
         b.clearance_photo = data_uri
-        b.resolved_by = token  # Associates clearance data specifically with this officer
+        b.resolved_by = token
         db.add(Notification(message=f"[RESOLVED & VERIFIED] Live camera proof submitted for {b.location_name} by officer {token}", image_thumb=data_uri))
         db.commit()
         return {"message": "Resolved with live camera photo verification"}
