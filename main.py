@@ -27,8 +27,8 @@ class User(Base):
     email = Column(String)
     mobile = Column(String)
     badge_number = Column(String, unique=True, index=True)
-    profile_photo = Column(String, nullable=True) # Base64 Profile Picture
-    status = Column(String, default="ACTIVE")     # 'ACTIVE' or 'PENDING APPROVAL'
+    profile_photo = Column(String, nullable=True)
+    status = Column(String, default="ACTIVE")
 
 class Blockade(Base):
     __tablename__ = "blockades"
@@ -39,9 +39,9 @@ class Blockade(Base):
     severity = Column(String)
     status = Column(String, default="ACTIVE")
     notes = Column(String, nullable=True)
-    image_url = Column(String, nullable=True)       # Stores AI Hazard Snapshot / Base64 Data URI
-    clearance_photo = Column(String, nullable=True) # Stores Live Officer Clearance Photo
-    resolved_by = Column(String, nullable=True)     # Badge/Username of the officer who resolved it
+    image_url = Column(String, nullable=True)
+    clearance_photo = Column(String, nullable=True)
+    resolved_by = Column(String, nullable=True)
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -52,7 +52,7 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="25.0")
+app = FastAPI(title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", version="26.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,8 +63,6 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
-
-# Secret API Key for your YOLO / ESP32 Project Model
 EDGE_API_KEY = "BLU-GUARD-2026"
 
 def get_db():
@@ -156,7 +154,7 @@ def serve_frontend():
             .gold-glow { box-shadow: 0 0 35px rgba(217, 119, 6, 0.35); }
         </style>
     </head>
-    <body class="bg-[#081021] text-slate-100 min-h-screen font-sans">
+    <body class="bg-[#081021] text-slate-100 min-h-screen font-sans overflow-y-auto">
 
         <div class="h-1.5 w-full tn-police-stripe"></div>
 
@@ -241,8 +239,8 @@ def serve_frontend():
             </div>
         </div>
 
-        <!-- DASHBOARD -->
-        <div id="dashboard" class="hidden flex flex-col h-[calc(100vh-6px)]">
+        <!-- DASHBOARD (Scrollable) -->
+        <div id="dashboard" class="hidden flex flex-col min-h-screen">
             <header class="bg-[#0d182e] border-b-2 border-amber-500/40 px-6 py-2.5 flex justify-between items-center shadow-md">
                 <div class="flex items-center space-x-3.5">
                     <img src="/logo.png" class="w-10 h-10 object-contain rounded-full border border-amber-500/40 bg-slate-900" alt="Emblem">
@@ -305,8 +303,8 @@ def serve_frontend():
                 </div>
             </div>
 
-            <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 overflow-hidden">
-                <div class="lg:col-span-4 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col overflow-hidden space-y-4 shadow-lg">
+            <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5">
+                <div class="lg:col-span-4 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col space-y-4 shadow-lg">
                     <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
                         <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400">Active Field Incidents & Blockades</h3>
                         <div class="flex items-center space-x-2">
@@ -314,11 +312,11 @@ def serve_frontend():
                             <button onclick="loadBlockades()" class="text-amber-400 hover:text-amber-300 text-xs cursor-pointer"><i class="fa-solid fa-rotate"></i></button>
                         </div>
                     </div>
-                    <div id="blockade-list" class="flex-1 overflow-y-auto space-y-2.5 pr-1"></div>
+                    <div id="blockade-list" class="space-y-2.5 pr-1"></div>
                 </div>
 
-                <div class="lg:col-span-8 flex flex-col gap-5 overflow-hidden">
-                    <div class="flex-1 bg-[#0d182e] border border-amber-500/30 rounded-xl p-3 flex flex-col relative overflow-hidden min-h-[300px] shadow-lg">
+                <div class="lg:col-span-8 flex flex-col gap-5">
+                    <div class="bg-[#0d182e] border border-amber-500/30 rounded-xl p-3 flex flex-col relative min-h-[400px] shadow-lg">
                         <div class="flex justify-between items-center mb-2 px-1">
                             <span class="text-xs font-bold uppercase tracking-wider text-amber-400"><i class="fa-solid fa-map-location-dot text-red-500 mr-1.5"></i>TN Police Geo-Radar Grid (Live Model Sync)</span>
                             <div class="flex items-center gap-3 text-[11px]">
@@ -327,15 +325,15 @@ def serve_frontend():
                                 <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Cleared</span>
                             </div>
                         </div>
-                        <div id="map" class="flex-1 rounded-lg border border-amber-500/20 z-10"></div>
+                        <div id="map" class="w-full h-[400px] rounded-lg border border-amber-500/20 z-10"></div>
                     </div>
 
-                    <div class="h-48 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col overflow-hidden shadow-lg">
+                    <div class="bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col shadow-lg">
                         <div class="flex justify-between items-center mb-2">
                             <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400"><i class="fa-solid fa-walkie-talkie text-red-400 mr-1.5"></i>TN Police Control Room Wireless & Telemetry Log</h3>
                             <span class="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/30 px-2 py-0.5 rounded">Live Edge-AI Receiver Ready</span>
                         </div>
-                        <div id="notification-box" class="flex-1 bg-[#070e1c] border border-slate-800 rounded-lg p-3 overflow-y-auto space-y-2 font-mono text-xs text-slate-200"></div>
+                        <div id="notification-box" class="h-48 bg-[#070e1c] border border-slate-800 rounded-lg p-3 overflow-y-auto space-y-2 font-mono text-xs text-slate-200"></div>
                     </div>
                 </div>
             </div>
@@ -690,20 +688,22 @@ def serve_frontend():
                     const res = await fetch('/blockades/');
                     const data = await res.json();
                     const container = document.getElementById('admin-clearances-list');
-                    container.innerHTML = '';
-                    const resolved = data.filter(b => b.status === 'RESOLVED');
-                    if (resolved.length === 0) {
-                        container.innerHTML = '<p class="text-xs text-slate-500">No clearances logged yet.</p>';
-                        return;
+                    if (container) {
+                        container.innerHTML = '';
+                        const resolved = data.filter(b => b.status === 'RESOLVED');
+                        if (resolved.length === 0) {
+                            container.innerHTML = '<p class="text-xs text-slate-500">No clearances logged yet.</p>';
+                        } else {
+                            resolved.forEach((b) => {
+                                container.innerHTML += `
+                                    <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 gap-2">
+                                        <div>📍 <strong class="text-white">${b.location_name}</strong><br><span class="text-[10px] text-amber-300">Resolved by: ${b.resolved_by || 'Officer'}</span></div>
+                                        ${b.clearance_photo ? `<a href="${b.clearance_photo}" target="_blank"><img src="${b.clearance_photo}" class="w-12 h-12 object-cover rounded border border-emerald-500/40 shrink-0"></a>` : '<span class="text-[10px] text-slate-500">No Photo</span>'}
+                                    </div>
+                                `;
+                            });
+                        }
                     }
-                    resolved.forEach((b) => {
-                        container.innerHTML += `
-                            <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 gap-2">
-                                <div>📍 <strong class="text-white">${b.location_name}</strong><br><span class="text-[10px] text-amber-300">Resolved by: ${b.resolved_by || 'Officer'}</span></div>
-                                ${b.clearance_photo ? `<a href="${b.clearance_photo}" target="_blank"><img src="${b.clearance_photo}" class="w-12 h-12 object-cover rounded border border-emerald-500/40 shrink-0"></a>` : '<span class="text-[10px] text-slate-500">No Photo</span>'}
-                            </div>
-                        `;
-                    });
                 } catch (e) { console.error(e); }
             }
 
@@ -752,6 +752,7 @@ def serve_frontend():
                 const res = await fetch('/blockades/');
                 const data = await res.json();
                 const container = document.getElementById('blockade-list');
+                if (!container) return;
                 container.innerHTML = '';
 
                 if (markersLayer) markersLayer.clearLayers();
@@ -766,11 +767,11 @@ def serve_frontend():
                     let clearanceHtml = b.clearance_photo ? `
                         <div class="mt-1 p-1.5 bg-emerald-950/40 border border-emerald-500/30 rounded">
                             <div class="text-[10px] text-emerald-400 font-bold mb-1"><i class="fa-solid fa-camera"></i> Live Clearance Verified (By: ${b.resolved_by || 'Officer'}):</div>
-                            <img src="${b.clearance_photo}" class="w-full h-20 object-cover rounded">
+                            <img src="${b.clearance_photo}" class="w-full h-24 object-cover rounded">
                         </div>` : '';
 
                     container.innerHTML += `
-                        <div class="bg-[#070e1c] border ${isResolved ? 'border-slate-800/40 opacity-60' : 'border-amber-500/25'} p-3 rounded-lg space-y-2">
+                        <div class="bg-[#070e1c] border ${isResolved ? 'border-emerald-500/40' : 'border-amber-500/25'} p-3 rounded-lg space-y-2">
                             <div class="flex justify-between items-start">
                                 <div onclick="focusMap(${b.latitude}, ${b.longitude})" class="cursor-pointer">
                                     <h4 class="font-bold text-xs text-white hover:text-amber-400">${b.location_name}</h4>
@@ -781,7 +782,7 @@ def serve_frontend():
                             ${imgHtml}
                             ${clearanceHtml}
                             <div class="flex justify-between items-center pt-1 border-t border-slate-800/80">
-                                <span class="text-[11px] text-slate-400">Status: <strong class="text-amber-300">${b.status}</strong></span>
+                                <span class="text-[11px] text-slate-400">Status: <strong class="${isResolved ? 'text-emerald-400' : 'text-amber-300'}">${b.status}</strong></span>
                                 <div class="space-x-1.5">
                                     ${b.status === 'ACTIVE' ? `<button onclick="assignUnit(${b.id})" class="bg-blue-700/40 hover:bg-blue-700/60 border border-blue-400/30 text-blue-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Dispatch</button>` : ''}
                                     ${b.status === 'ASSIGNED' ? `<button onclick="markArrived(${b.id})" class="bg-amber-700/40 hover:bg-amber-700/60 border border-amber-400/30 text-amber-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Arrived</button>` : ''}
@@ -806,6 +807,7 @@ def serve_frontend():
                 const res = await fetch('/notifications/', { headers: { 'Authorization': 'Bearer ' + authToken } });
                 const data = await res.json();
                 const box = document.getElementById('notification-box');
+                if (!box) return;
                 box.innerHTML = '';
                 data.slice().reverse().forEach(n => {
                     let thumb = n.image_thumb ? `<img src="${n.image_thumb}" class="w-12 h-10 object-cover rounded inline-block ml-2 border border-slate-700">` : '';
