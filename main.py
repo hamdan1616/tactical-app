@@ -59,7 +59,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", 
-    version="36.0"
+    version="40.0"
 )
 
 app.add_middleware(
@@ -128,7 +128,6 @@ def seed_initial_data():
             status="ACTIVE"
         ))
     
-    # Ensure at least one ACTIVE blockade exists on fresh start
     active_count = db.query(Blockade).filter(Blockade.status != "RESOLVED").count()
     if active_count == 0:
         db.add(Blockade(
@@ -481,30 +480,35 @@ def serve_frontend():
             let activeResolvingId = null;
             let lastSeenNotificationId = null;
 
-            // --- TACTICAL SIREN BEEP & POP-UP BANNER FOR LIVE YOLO ALERTS ---
+            # Authentic Police Siren Wail via Web Audio API
             function playTacticalSirenBeep() {
                 try {
                     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.type = 'sawtooth';
-                    osc.frequency.setValueAtTime(880, ctx.currentTime);
-                    osc.frequency.setValueAtTime(660, ctx.currentTime + 0.18);
-                    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start();
-                    osc.stop(ctx.currentTime + 0.38);
+                    let startTime = ctx.currentTime;
+                    for (let i = 0; i < 3; i++) {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(600, startTime + (i * 0.4));
+                        osc.frequency.linearRampToValueAtTime(1200, startTime + (i * 0.4) + 0.2);
+                        osc.frequency.linearRampToValueAtTime(600, startTime + (i * 0.4) + 0.4);
+                        gain.gain.setValueAtTime(0.2, startTime + (i * 0.4));
+                        gain.gain.exponentialRampToValueAtTime(0.01, startTime + (i * 0.4) + 0.4);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(startTime + (i * 0.4));
+                        osc.stop(startTime + (i * 0.4) + 0.4);
+                    }
                 } catch (e) {}
             }
 
             function showWebPopupBanner(message) {
                 const toast = document.createElement('div');
                 toast.className = 'fixed top-16 right-6 z-50 bg-red-900/95 border-2 border-amber-400 text-white px-4 py-3 rounded-xl shadow-2xl max-w-sm animate-bounce';
-                toast.innerHTML = `<div class="text-xs font-extrabold text-amber-300 uppercase">🚨 Incoming YOLO Edge Alert</div><div class="text-xs mt-1">${message}</div>`;
+                toast.innerHTML = `<div class="text-xs font-extrabold text-amber-300 uppercase">🚨 TN Police Tactical Alert</div><div class="text-xs mt-1">${message}</div>`;
                 document.body.appendChild(toast);
                 playTacticalSirenBeep();
-                setTimeout(() => toast.remove(), 6000);
+                setTimeout(() => toast.remove(), 7000);
             }
 
             // --- 2-SECOND REALTIME POLLING ---
@@ -1087,7 +1091,6 @@ async def update_profile(
         base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
         user.profile_photo = f"data:{file.content_type or 'image/jpeg'};base64,{base64_encoded}"
     
-    # Require Admin Re-Approval when non-admin officer edits critical profile info
     if user.username.upper() != "TN-ADMIN-01":
         user.status = "PENDING APPROVAL"
         db.add(Notification(message=f"[PROFILE EDIT] Officer {user.badge_number} updated profile details (Pending Admin Approval)"))
@@ -1125,7 +1128,6 @@ def reset_all_blockades(db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Database reset successfully. All incidents set to active."}
 
-# Support both /api/edge-trigger and /api-edge-trigger so YOLO scripts never fail
 @app.post("/api/edge-trigger", tags=["Live Project Model Integration"])
 @app.post("/api-edge-trigger", tags=["Live Project Model Integration"])
 def trigger_from_project_model(payload: EdgeModelTrigger, db: Session = Depends(get_db)):
