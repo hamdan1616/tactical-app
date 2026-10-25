@@ -59,7 +59,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", 
-    version="40.0"
+    version="41.0"
 )
 
 app.add_middleware(
@@ -480,7 +480,7 @@ def serve_frontend():
             let activeResolvingId = null;
             let lastSeenNotificationId = null;
 
-            # Authentic Police Siren Wail via Web Audio API
+            // Authentic Police Siren Wail via Web Audio API
             function playTacticalSirenBeep() {
                 try {
                     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1091,6 +1091,7 @@ async def update_profile(
         base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
         user.profile_photo = f"data:{file.content_type or 'image/jpeg'};base64,{base64_encoded}"
     
+    # Require Admin Re-Approval when non-admin officer edits critical profile info
     if user.username.upper() != "TN-ADMIN-01":
         user.status = "PENDING APPROVAL"
         db.add(Notification(message=f"[PROFILE EDIT] Officer {user.badge_number} updated profile details (Pending Admin Approval)"))
@@ -1128,6 +1129,7 @@ def reset_all_blockades(db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Database reset successfully. All incidents set to active."}
 
+# Support both /api/edge-trigger and /api-edge-trigger so YOLO scripts never fail
 @app.post("/api/edge-trigger", tags=["Live Project Model Integration"])
 @app.post("/api-edge-trigger", tags=["Live Project Model Integration"])
 def trigger_from_project_model(payload: EdgeModelTrigger, db: Session = Depends(get_db)):
