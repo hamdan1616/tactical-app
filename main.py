@@ -59,7 +59,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", 
-    version="41.0"
+    version="42.0"
 )
 
 app.add_middleware(
@@ -389,7 +389,7 @@ def serve_frontend():
             </div>
 
             <footer class="bg-[#0d182e] border-t border-amber-500/20 py-2.5 text-center text-xs text-slate-400">
-                நான்காம் காவல் நண்பன் • <span class="text-amber-400 font-semibold">Designed & Developed by Mohamed Hamdan</span>
+                நான்காம் காவல் நண்பன் • <span class="text-amber-400 font-semibold">Designed & Developed by Mohamed Hamdan[cite: 1]</span>
             </footer>
         </div>
 
@@ -480,26 +480,17 @@ def serve_frontend():
             let activeResolvingId = null;
             let lastSeenNotificationId = null;
 
-            // Authentic Police Siren Wail via Web Audio API
+            // Reliable HTML5 Audio Police Dispatch Siren for Web
             function playTacticalSirenBeep() {
                 try {
-                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    let startTime = ctx.currentTime;
-                    for (let i = 0; i < 3; i++) {
-                        const osc = ctx.createOscillator();
-                        const gain = ctx.createGain();
-                        osc.type = 'sawtooth';
-                        osc.frequency.setValueAtTime(600, startTime + (i * 0.4));
-                        osc.frequency.linearRampToValueAtTime(1200, startTime + (i * 0.4) + 0.2);
-                        osc.frequency.linearRampToValueAtTime(600, startTime + (i * 0.4) + 0.4);
-                        gain.gain.setValueAtTime(0.2, startTime + (i * 0.4));
-                        gain.gain.exponentialRampToValueAtTime(0.01, startTime + (i * 0.4) + 0.4);
-                        osc.connect(gain);
-                        gain.connect(ctx.destination);
-                        osc.start(startTime + (i * 0.4));
-                        osc.stop(startTime + (i * 0.4) + 0.4);
-                    }
-                } catch (e) {}
+                    const sirenAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                    sirenAudio.volume = 1.0;
+                    sirenAudio.play().catch(err => {
+                        console.log('Audio autoplay prevented by browser policy until user click:', err);
+                    });
+                } catch (e) {
+                    console.log('Audio error:', e);
+                }
             }
 
             function showWebPopupBanner(message) {
@@ -888,14 +879,12 @@ def serve_frontend():
                         </div>`;
 
                     if (markersLayer && b.latitude && b.longitude) {
-                        // 1. Draw Hazard Circle Marker
                         const markerColor = isResolved ? '#10b981' : (b.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b');
                         const circle = L.circleMarker([b.latitude, b.longitude], {
                             radius: 9, fillColor: markerColor, color: '#fbbf24', weight: 2, opacity: 1, fillOpacity: 0.9
                         }).bindPopup(`<b>Hazard: ${b.location_name}</b><br>Severity: ${b.severity}<br>Status: ${b.status}`);
                         markersLayer.addLayer(circle);
 
-                        // 2. Draw Live Officer Tracking Shield Marker & Dashed Route Line when Dispatched/Arrived
                         if (isAssignedOrArrived && b.officer_lat && b.officer_lng) {
                             const officerIcon = L.divIcon({
                                 className: 'custom-officer-marker',
@@ -909,7 +898,6 @@ def serve_frontend():
                                 .bindPopup(`<b>🚓 TN Police Dispatched Unit</b><br>Target: ${b.location_name}<br>Status: ${b.status}`);
                             markersLayer.addLayer(officerMarker);
 
-                            // Draw Tactical Route Line from Officer to Incident
                             const routeLine = L.polyline([[b.officer_lat, b.officer_lng], [b.latitude, b.longitude]], {
                                 color: '#38bdf8', weight: 2.5, dashArray: '6, 6', opacity: 0.85
                             });
@@ -1091,7 +1079,6 @@ async def update_profile(
         base64_encoded = base64.b64encode(file_bytes).decode("utf-8")
         user.profile_photo = f"data:{file.content_type or 'image/jpeg'};base64,{base64_encoded}"
     
-    # Require Admin Re-Approval when non-admin officer edits critical profile info
     if user.username.upper() != "TN-ADMIN-01":
         user.status = "PENDING APPROVAL"
         db.add(Notification(message=f"[PROFILE EDIT] Officer {user.badge_number} updated profile details (Pending Admin Approval)"))
@@ -1129,7 +1116,6 @@ def reset_all_blockades(db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Database reset successfully. All incidents set to active."}
 
-# Support both /api/edge-trigger and /api-edge-trigger so YOLO scripts never fail
 @app.post("/api/edge-trigger", tags=["Live Project Model Integration"])
 @app.post("/api-edge-trigger", tags=["Live Project Model Integration"])
 def trigger_from_project_model(payload: EdgeModelTrigger, db: Session = Depends(get_db)):
