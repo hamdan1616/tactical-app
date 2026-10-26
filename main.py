@@ -30,8 +30,8 @@ class User(Base):
     email = Column(String)
     mobile = Column(String)
     badge_number = Column(String, unique=True, index=True)
-    profile_photo = Column(String, nullable=True)  # Base64 Profile Picture
-    status = Column(String, default="ACTIVE")      # 'ACTIVE' or 'PENDING APPROVAL'
+    profile_photo = Column(String, nullable=True)
+    status = Column(String, default="ACTIVE")
 
 class Blockade(Base):
     __tablename__ = "blockades"
@@ -40,13 +40,13 @@ class Blockade(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     severity = Column(String)
-    status = Column(String, default="ACTIVE")      # ACTIVE, ASSIGNED, ARRIVED, RESOLVED
+    status = Column(String, default="ACTIVE")
     notes = Column(String, nullable=True)
-    image_url = Column(String, nullable=True)        # Stores AI Hazard Snapshot / Base64 Data URI
-    clearance_photo = Column(String, nullable=True)  # Stores Live Officer Clearance Photo
-    resolved_by = Column(String, nullable=True)      # Badge/Username of the officer who resolved it
-    officer_lat = Column(Float, nullable=True)       # Live Officer Tracking Latitude
-    officer_lng = Column(Float, nullable=True)       # Live Officer Tracking Longitude
+    image_url = Column(String, nullable=True)
+    clearance_photo = Column(String, nullable=True)
+    resolved_by = Column(String, nullable=True)
+    officer_lat = Column(Float, nullable=True)
+    officer_lng = Column(Float, nullable=True)
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -59,7 +59,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="நான்காம் காவல் நண்பன் | Naangham Kaaval Nanban - TN Police", 
-    version="42.0"
+    version="49.0"
 )
 
 app.add_middleware(
@@ -71,8 +71,6 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
-
-# Secret API Key for your YOLO / ESP32 Project Model
 EDGE_API_KEY = "BLU-GUARD-2026"
 
 def get_db():
@@ -82,13 +80,19 @@ def get_db():
     finally:
         db.close()
 
-# --- Pydantic Schemas ---
 class RegisterRequest(BaseModel):
     name: str
     email: str
     mobile: str
     badge_number: str
     password: str
+
+class AdminEditOfficerRequest(BaseModel):
+    name: str
+    email: str
+    mobile: str
+    status: str
+    password: Optional[str] = None
 
 class EdgeModelTrigger(BaseModel):
     api_key: str
@@ -103,7 +107,6 @@ class TelemetryUpdate(BaseModel):
     latitude: float
     longitude: float
 
-# --- Startup Seeding ---
 @app.on_event("startup")
 def seed_initial_data():
     db = SessionLocal()
@@ -128,8 +131,7 @@ def seed_initial_data():
             status="ACTIVE"
         ))
     
-    active_count = db.query(Blockade).filter(Blockade.status != "RESOLVED").count()
-    if active_count == 0:
+    if db.query(Blockade).filter(Blockade.status != "RESOLVED").count() == 0:
         db.add(Blockade(
             location_name="Kumbakonam Bypass Junction - Sector 2",
             latitude=10.9601,
@@ -148,7 +150,6 @@ def get_logo():
         return FileResponse("logo.png")
     raise HTTPException(status_code=404, detail="Logo not found")
 
-# --- FULL INTERACTIVE WEB DASHBOARD ---
 @app.get("/", response_class=HTMLResponse, tags=["Frontend UI"])
 def serve_frontend():
     return """
@@ -191,7 +192,7 @@ def serve_frontend():
 
         <div class="h-1.5 w-full tn-police-stripe"></div>
 
-        <!-- 1. LOGIN / REGISTER MODAL -->
+        <!-- LOGIN / REGISTER MODAL -->
         <div id="login-modal" class="fixed inset-0 bg-[#050b16]/92 backdrop-blur-md z-50 flex items-center justify-center p-4">
             <div class="bg-[#0d182e] border-2 border-amber-500/40 rounded-2xl w-full max-w-md p-7 gold-glow relative overflow-hidden">
                 <div class="absolute top-0 left-0 right-0 h-1.5 tn-police-stripe"></div>
@@ -218,7 +219,12 @@ def serve_frontend():
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-amber-400/90 uppercase mb-1">Password</label>
-                        <input type="password" id="login-password" required placeholder="Enter Password" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400">
+                        <div class="relative">
+                            <input type="password" id="login-password" required placeholder="Enter Password" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3.5 py-2 pr-10 text-sm text-white focus:outline-none focus:border-amber-400">
+                            <button type="button" onclick="togglePasswordVisibility('login-password', 'login-eye')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-400 cursor-pointer">
+                                <i id="login-eye" class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
                     </div>
                     <button type="submit" class="w-full bg-gradient-to-r from-red-700 to-blue-800 hover:from-red-600 hover:to-blue-700 border border-amber-400/50 text-white font-bold py-2.5 rounded-lg transition text-sm cursor-pointer shadow-md">
                         <i class="fa-solid fa-shield-halved mr-1 text-amber-300"></i> Secure Login
@@ -249,7 +255,12 @@ def serve_frontend():
                         </div>
                         <div>
                             <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-0.5">Set Password</label>
-                            <input type="password" id="reg-password" placeholder="••••••••" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                            <div class="relative">
+                                <input type="password" id="reg-password" placeholder="••••••••" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 pr-9 text-xs text-white">
+                                <button type="button" onclick="togglePasswordVisibility('reg-password', 'reg-eye')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-400 cursor-pointer text-xs">
+                                    <i id="reg-eye" class="fa-solid fa-eye"></i>
+                                </button>
+                            </div>
                         </div>
                         <button onclick="requestOTP()" class="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-2 rounded-lg transition text-xs cursor-pointer shadow">
                             <i class="fa-solid fa-paper-plane mr-1"></i> Send Verification OTP (Mail/SMS)
@@ -268,6 +279,14 @@ def serve_frontend():
                         <button onclick="verifyAndRegister()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition text-xs cursor-pointer shadow">
                             <i class="fa-solid fa-check-circle mr-1"></i> Verify OTP & Create Account
                         </button>
+                        <div class="flex justify-between items-center pt-1">
+                            <button type="button" onclick="resendOTP()" class="text-[11px] text-amber-400 hover:underline font-bold cursor-pointer">
+                                <i class="fa-solid fa-rotate-right mr-1"></i> Resend OTP
+                            </button>
+                            <button type="button" onclick="backToRegStep1()" class="text-[11px] text-slate-400 hover:text-white cursor-pointer">
+                                ← Edit Details
+                            </button>
+                        </div>
                     </div>
                     <div id="reg-error" class="text-center text-xs text-red-400 hidden"></div>
                 </div>
@@ -278,7 +297,7 @@ def serve_frontend():
             </div>
         </div>
 
-        <!-- 2. MAIN TACTICAL DASHBOARD -->
+        <!-- MAIN TACTICAL DASHBOARD -->
         <div id="dashboard" class="hidden flex flex-col min-h-screen">
             <header class="bg-[#0d182e] border-b-2 border-amber-500/40 px-6 py-2.5 flex flex-wrap justify-between items-center gap-3 shadow-md">
                 <div class="flex items-center space-x-3.5">
@@ -296,15 +315,17 @@ def serve_frontend():
                 </div>
 
                 <div class="flex items-center space-x-2.5">
-                    <button onclick="resetDatabase()" class="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-400/40 text-blue-300 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
-                        <i class="fa-solid fa-rotate-right"></i> Reset & Spawn Active
-                    </button>
-                    <button onclick="simulateAITrigger()" class="bg-red-700/30 hover:bg-red-700/50 border border-amber-400/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
-                        <i class="fa-solid fa-satellite-dish text-red-400"></i> Simulate AI Hazard
-                    </button>
+                    <!-- ADMIN-ONLY ACTION BUTTONS -->
+                    <div id="admin-action-btns" class="hidden flex items-center space-x-2">
+                        <button onclick="resetDatabase()" class="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-400/40 text-blue-300 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
+                            <i class="fa-solid fa-rotate-right"></i> Reset & Spawn Active
+                        </button>
+                        <button onclick="simulateAITrigger()" class="bg-red-700/30 hover:bg-red-700/50 border border-amber-400/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
+                            <i class="fa-solid fa-satellite-dish text-red-400"></i> Simulate AI Hazard
+                        </button>
+                    </div>
                     <a href="/docs" target="_blank" class="text-xs text-amber-400 hover:underline px-2 font-medium">API /docs ↗</a>
                     
-                    <!-- OFFICER PROFILE DROPDOWN MENU -->
                     <div class="relative">
                         <button onclick="toggleProfileMenu()" class="bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-2">
                             <i class="fa-solid fa-user-shield"></i> <span id="user-badge">Officer</span> <i class="fa-solid fa-caret-down text-[10px]"></i>
@@ -313,7 +334,7 @@ def serve_frontend():
                             <button onclick="openProfileModal()" class="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-amber-500/20 hover:text-amber-300 transition flex items-center gap-2 cursor-pointer">
                                 <i class="fa-solid fa-id-card text-amber-400"></i> View & Edit Profile
                             </button>
-                            <button onclick="openClearancesModal()" class="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-amber-500/20 hover:text-amber-300 transition flex items-center gap-2 cursor-pointer">
+                            <button id="menu-my-clearances" onclick="openClearancesModal()" class="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-amber-500/20 hover:text-amber-300 transition flex items-center gap-2 cursor-pointer">
                                 <i class="fa-solid fa-clipboard-check text-emerald-400"></i> My Last 10 Clearances
                             </button>
                             <div class="border-t border-slate-700 my-1"></div>
@@ -325,17 +346,22 @@ def serve_frontend():
                 </div>
             </header>
 
-            <!-- ADMIN SUPERVISOR OVERSIGHT PANEL -->
+            <!-- PENDING APPROVAL WARNING BANNER -->
+            <div id="pending-banner" class="hidden bg-amber-600/20 border-b border-amber-500/50 py-2 px-6 text-center text-xs font-bold text-amber-300">
+                ⏳ YOUR ACCOUNT STATUS IS "PENDING APPROVAL" BY CENTRAL COMMAND ADMIN. FIELD ACTIONS ARE RESTRICTED.
+            </div>
+
+            <!-- ADMIN SUPERVISOR PANEL -->
             <div id="admin-panel" class="hidden bg-[#0d182e] border-b-2 border-amber-500/30 p-4 px-6">
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400 flex items-center gap-2">
-                        <i class="fa-solid fa-shield-cat text-amber-300"></i> Central Command Supervisor: Officer Approvals & Department Oversight
+                        <i class="fa-solid fa-shield-cat text-amber-300"></i> Central Command Supervisor: Officer Approvals, Profile Editor & Department Oversight
                     </h3>
                     <span class="text-[11px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold">ADMIN SUPERVISOR ACCESS</span>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-60 overflow-y-auto">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-64 overflow-y-auto">
                     <div class="bg-[#070e1c] border border-amber-500/20 rounded-lg p-3">
-                        <h4 class="text-xs font-bold text-slate-300 mb-2">Registered Officer Accounts & Approvals</h4>
+                        <h4 class="text-xs font-bold text-slate-300 mb-2">Registered Officer Accounts (Approve or Edit Any Profile)</h4>
                         <div id="admin-officers-list" class="space-y-2 text-xs text-slate-300"></div>
                     </div>
                     <div class="bg-[#070e1c] border border-emerald-500/20 rounded-lg p-3">
@@ -345,21 +371,18 @@ def serve_frontend():
                 </div>
             </div>
 
-            <!-- MAIN GRID -->
             <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5">
-                <!-- LEFT COLUMN: INCIDENT CARDS -->
                 <div class="lg:col-span-4 bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col space-y-4 shadow-lg">
                     <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
                         <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400">Active Field Incidents & Blockades</h3>
                         <div class="flex items-center space-x-2">
-                            <button onclick="clearResolved()" class="text-[11px] text-slate-400 hover:text-red-400 cursor-pointer">Clear Resolved</button>
+                            <button id="btn-clear-resolved" onclick="clearResolved()" class="hidden text-[11px] text-slate-400 hover:text-red-400 cursor-pointer">Clear Resolved</button>
                             <button onclick="loadBlockades()" class="text-amber-400 hover:text-amber-300 text-xs cursor-pointer"><i class="fa-solid fa-rotate"></i></button>
                         </div>
                     </div>
                     <div id="blockade-list" class="space-y-2.5 pr-1 max-h-[650px] overflow-y-auto"></div>
                 </div>
 
-                <!-- RIGHT COLUMN: GEO-RADAR MAP & WIRELESS LOG -->
                 <div class="lg:col-span-8 flex flex-col gap-5">
                     <div class="bg-[#0d182e] border border-amber-500/30 rounded-xl p-3 flex flex-col relative min-h-[420px] shadow-lg">
                         <div class="flex flex-wrap justify-between items-center mb-2 px-1 gap-2">
@@ -378,8 +401,8 @@ def serve_frontend():
 
                     <div class="bg-[#0d182e] border border-amber-500/30 rounded-xl p-4 flex flex-col shadow-lg">
                         <div class="flex justify-between items-center mb-2">
-                            <h3 class="font-bold text-xs uppercase tracking-wider text-amber-400">
-                                <i class="fa-solid fa-walkie-talkie text-red-400 mr-1.5"></i>TN Police Control Room Wireless & Telemetry Log
+                            <h3 id="wireless-log-heading" class="font-bold text-xs uppercase tracking-wider text-amber-400">
+                                <i class="fa-solid fa-walkie-talkie text-red-400 mr-1.5"></i>TN Police Wireless & Blockade Alert Feed
                             </h3>
                             <span class="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/30 px-2 py-0.5 rounded">Live Edge-AI Receiver Ready</span>
                         </div>
@@ -389,11 +412,11 @@ def serve_frontend():
             </div>
 
             <footer class="bg-[#0d182e] border-t border-amber-500/20 py-2.5 text-center text-xs text-slate-400">
-                நான்காம் காவல் நண்பன் • <span class="text-amber-400 font-semibold">Designed & Developed by Mohamed Hamdan[cite: 1]</span>
+                நான்காம் காவல் நண்பன் • <span class="text-amber-400 font-semibold">Designed & Developed by Mohamed Hamdan</span>
             </footer>
         </div>
 
-        <!-- 3. PROFILE & EDIT MODAL -->
+        <!-- OFFICER SELF PROFILE EDIT MODAL -->
         <div id="profile-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
             <div class="bg-[#0d182e] border-2 border-amber-500/50 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
                 <div class="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -429,7 +452,12 @@ def serve_frontend():
                     </div>
                     <div>
                         <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">New Password (Optional)</label>
-                        <input type="password" id="profile-password" placeholder="Leave blank to keep current" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                        <div class="relative">
+                            <input type="password" id="profile-password" placeholder="Leave blank to keep current" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 pr-9 text-xs text-white">
+                            <button type="button" onclick="togglePasswordVisibility('profile-password', 'profile-eye')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-400 cursor-pointer text-xs">
+                                <i id="profile-eye" class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="flex space-x-2 pt-2">
                         <button type="submit" class="flex-1 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-2 rounded-lg text-xs cursor-pointer shadow">Save Changes</button>
@@ -440,7 +468,57 @@ def serve_frontend():
             </div>
         </div>
 
-        <!-- 4. MY LAST 10 CLEARANCES MODAL -->
+        <!-- ADMIN EDIT ANY OFFICER PROFILE MODAL -->
+        <div id="admin-edit-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-[#0d182e] border-2 border-blue-500/50 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <h3 class="font-bold text-sm text-blue-400 uppercase"><i class="fa-solid fa-user-pen mr-2"></i>Admin Supervisor: Edit Officer Profile</h3>
+                    <button onclick="closeAdminEditModal()" class="text-slate-400 hover:text-white text-xs cursor-pointer"><i class="fa-solid fa-xmark text-base"></i></button>
+                </div>
+                <form onsubmit="submitAdminOfficerEdit(event)" class="space-y-3">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Target Badge ID</label>
+                        <input type="text" id="admin-edit-badge" disabled class="w-full bg-[#070e1c]/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-400">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Officer Full Name</label>
+                        <input type="text" id="admin-edit-name" required class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Mobile Number</label>
+                            <input type="text" id="admin-edit-mobile" required class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Account Status</label>
+                            <select id="admin-edit-status" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-2 py-1.5 text-xs text-white">
+                                <option value="ACTIVE">ACTIVE</option>
+                                <option value="PENDING APPROVAL">PENDING APPROVAL</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Official Email</label>
+                        <input type="email" id="admin-edit-email" required class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-white">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-amber-400 uppercase mb-1">Reset Password (Optional)</label>
+                        <div class="relative">
+                            <input type="password" id="admin-edit-password" placeholder="Leave blank to keep existing" class="w-full bg-[#070e1c] border border-amber-500/30 rounded-lg px-3 py-1.5 pr-9 text-xs text-white">
+                            <button type="button" onclick="togglePasswordVisibility('admin-edit-password', 'admin-edit-eye')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-400 cursor-pointer text-xs">
+                                <i id="admin-edit-eye" class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex space-x-2 pt-2">
+                        <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-xs cursor-pointer shadow">Update Officer Account</button>
+                        <button type="button" onclick="closeAdminEditModal()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-xs cursor-pointer">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- CLEARANCES MODAL (OFFICERS ONLY) -->
         <div id="clearances-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
             <div class="bg-[#0d182e] border-2 border-emerald-500/50 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl flex flex-col max-h-[85vh]">
                 <div class="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -451,7 +529,7 @@ def serve_frontend():
             </div>
         </div>
 
-        <!-- 5. STRICT LIVE CAMERA CLEARANCE PHOTO MODAL -->
+        <!-- CAMERA CLEARANCE MODAL -->
         <div id="photo-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
             <div class="bg-[#0d182e] border-2 border-emerald-500/50 rounded-xl max-w-sm w-full p-5 space-y-4">
                 <div class="text-center">
@@ -471,38 +549,64 @@ def serve_frontend():
             </div>
         </div>
 
-        <!-- FULL FRONTEND SCRIPT -->
         <script>
             let authToken = localStorage.getItem('token_8002') || '';
+            let currentUserStatus = 'ACTIVE';
             let map, markersLayer;
             let generatedOTP = '';
             let tempRegData = {};
             let activeResolvingId = null;
             let lastSeenNotificationId = null;
+            let cachedOfficers = [];
 
-            // Reliable HTML5 Audio Police Dispatch Siren for Web
-            function playTacticalSirenBeep() {
-                try {
-                    const sirenAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-                    sirenAudio.volume = 1.0;
-                    sirenAudio.play().catch(err => {
-                        console.log('Audio autoplay prevented by browser policy until user click:', err);
-                    });
-                } catch (e) {
-                    console.log('Audio error:', e);
+            function togglePasswordVisibility(inputId, iconId) {
+                const input = document.getElementById(inputId);
+                const icon = document.getElementById(iconId);
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    icon.classList.remove('fa-eye');
+                    icon.classList.add('fa-eye-slash');
+                } else {
+                    input.type = 'password';
+                    icon.classList.remove('fa-eye-slash');
+                    icon.classList.add('fa-eye');
                 }
             }
 
-            function showWebPopupBanner(message) {
-                const toast = document.createElement('div');
-                toast.className = 'fixed top-16 right-6 z-50 bg-red-900/95 border-2 border-amber-400 text-white px-4 py-3 rounded-xl shadow-2xl max-w-sm animate-bounce';
-                toast.innerHTML = `<div class="text-xs font-extrabold text-amber-300 uppercase">🚨 TN Police Tactical Alert</div><div class="text-xs mt-1">${message}</div>`;
-                document.body.appendChild(toast);
-                playTacticalSirenBeep();
-                setTimeout(() => toast.remove(), 7000);
+            function playTacticalSirenAndVoice(message) {
+                try {
+                    const sirenAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                    sirenAudio.volume = 0.85;
+                    sirenAudio.play().catch(err => {});
+                } catch (e) {}
+
+                try {
+                    if ('speechSynthesis' in window) {
+                        window.speechSynthesis.cancel();
+                        const cleanText = message.replace(/\\[.*?\\]/g, '').replace(/@/g, 'at');
+                        const isAdmin = authToken.toUpperCase() === 'TN-ADMIN-01';
+                        const spokenPrompt = isAdmin 
+                            ? `Attention Control Room! Police Emergency Alert! ${cleanText}`
+                            : `Attention Field Officer! Traffic Blockade and Congestion Alert! ${cleanText}. Proceed for immediate clearance.`;
+                        const utter = new SpeechSynthesisUtterance(spokenPrompt);
+                        utter.lang = 'en-IN';
+                        utter.rate = 1.0;
+                        window.speechSynthesis.speak(utter);
+                    }
+                } catch (e) {}
             }
 
-            // --- 2-SECOND REALTIME POLLING ---
+            function showWebPopupBanner(message) {
+                const isAdmin = authToken.toUpperCase() === 'TN-ADMIN-01';
+                const headerTitle = isAdmin ? '🚨 Control Room Tactical Alert' : '🚨 Officer Blockade & Congestion Alert';
+                const toast = document.createElement('div');
+                toast.className = 'fixed top-16 right-6 z-50 bg-red-900/95 border-2 border-amber-400 text-white px-4 py-3 rounded-xl shadow-2xl max-w-sm animate-bounce';
+                toast.innerHTML = `<div class="text-xs font-extrabold text-amber-300 uppercase">${headerTitle}</div><div class="text-xs mt-1">${message}</div>`;
+                document.body.appendChild(toast);
+                playTacticalSirenAndVoice(message);
+                setTimeout(() => toast.remove(), 7500);
+            }
+
             setInterval(async () => {
                 const badge = document.getElementById('grid-status-badge');
                 const dot = document.getElementById('grid-dot');
@@ -514,6 +618,7 @@ def serve_frontend():
                         dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
                         text.innerText = 'SECURE GRID LIVE';
                         if (authToken && !document.getElementById('dashboard').classList.contains('hidden')) {
+                            checkMyProfileStatus();
                             loadBlockades();
                             loadNotifications();
                             if (authToken.toUpperCase() === 'TN-ADMIN-01') loadAdminPanelData();
@@ -524,13 +629,36 @@ def serve_frontend():
                     dot.className = 'w-2 h-2 rounded-full bg-red-500';
                     text.innerText = 'SECURE GRID OFFLINE';
                 }
-            }, 2000);
+            }, 3000);
+
+            async function checkMyProfileStatus() {
+                try {
+                    const res = await fetch('/api/profile', { headers: { 'Authorization': 'Bearer ' + authToken } });
+                    if (res.ok) {
+                        const prof = await res.json();
+                        currentUserStatus = prof.status || 'ACTIVE';
+                        const banner = document.getElementById('pending-banner');
+                        if (currentUserStatus !== 'ACTIVE' && authToken.toUpperCase() !== 'TN-ADMIN-01') {
+                            banner.classList.remove('hidden');
+                        } else {
+                            banner.classList.add('hidden');
+                        }
+                    }
+                } catch (e) {}
+            }
 
             async function resetDatabase() {
-                await fetch('/blockades/reset-all', { method: 'POST' });
-                loadBlockades();
-                loadNotifications();
-                alert('Database reset! All resolved alerts cleared and a fresh ACTIVE incident has been spawned.');
+                const res = await fetch('/blockades/reset-all', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
+                if (res.ok) {
+                    loadBlockades();
+                    loadNotifications();
+                    alert('Database reset! All resolved alerts cleared and a fresh ACTIVE incident has been spawned.');
+                } else {
+                    alert('Unauthorized: Only Central Command Admin can reset the database.');
+                }
             }
 
             function toggleProfileMenu() {
@@ -597,19 +725,63 @@ def serve_frontend():
                     });
                     if (res.ok) {
                         const msg = document.getElementById('profile-msg');
-                        msg.innerText = 'Profile updated successfully!';
+                        msg.innerText = authToken.toUpperCase() === 'TN-ADMIN-01' ? 'Supervisor profile updated!' : 'Profile updated! Status set to PENDING APPROVAL.';
                         msg.classList.remove('hidden');
-                        setTimeout(() => { msg.classList.add('hidden'); closeProfileModal(); }, 1500);
+                        checkMyProfileStatus();
+                        setTimeout(() => { msg.classList.add('hidden'); closeProfileModal(); }, 1800);
                     } else {
                         alert('Failed to update profile.');
                     }
                 } catch (err) { alert('Error: ' + err.message); }
             }
 
+            function openAdminEditModal(badgeNum) {
+                const officer = cachedOfficers.find(o => o.badge_number === badgeNum);
+                if (!officer) return;
+                document.getElementById('admin-edit-badge').value = officer.badge_number;
+                document.getElementById('admin-edit-name').value = officer.name || '';
+                document.getElementById('admin-edit-mobile').value = officer.mobile || '';
+                document.getElementById('admin-edit-email').value = officer.email || '';
+                document.getElementById('admin-edit-status').value = officer.status || 'ACTIVE';
+                document.getElementById('admin-edit-password').value = '';
+                document.getElementById('admin-edit-modal').classList.remove('hidden');
+            }
+
+            function closeAdminEditModal() {
+                document.getElementById('admin-edit-modal').classList.add('hidden');
+            }
+
+            async function submitAdminOfficerEdit(e) {
+                e.preventDefault();
+                const badge = document.getElementById('admin-edit-badge').value;
+                const payload = {
+                    name: document.getElementById('admin-edit-name').value,
+                    mobile: document.getElementById('admin-edit-mobile').value,
+                    email: document.getElementById('admin-edit-email').value,
+                    status: document.getElementById('admin-edit-status').value,
+                    password: document.getElementById('admin-edit-password').value || null
+                };
+                const res = await fetch(`/admin/officers/${badge}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': 'Bearer ' + authToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    closeAdminEditModal();
+                    loadAdminPanelData();
+                    alert(`Officer ${badge} profile updated by Admin.`);
+                } else {
+                    alert('Failed to update officer profile.');
+                }
+            }
+
             async function openClearancesModal() {
                 document.getElementById('profile-dropdown').classList.add('hidden');
                 const list = document.getElementById('clearances-list');
-                list.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Loading your clearance history...</p>';
+                list.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Loading your personal clearance history...</p>';
                 document.getElementById('clearances-modal').classList.remove('hidden');
 
                 try {
@@ -618,7 +790,7 @@ def serve_frontend():
                         const data = await res.json();
                         list.innerHTML = '';
                         if (data.length === 0) {
-                            list.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">No blockade clearances recorded yet.</p>';
+                            list.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">No blockade clearances recorded under your badge yet.</p>';
                             return;
                         }
                         data.forEach((b, idx) => {
@@ -627,7 +799,7 @@ def serve_frontend():
                                     <div class="space-y-1">
                                         <div class="flex items-center gap-2">
                                             <span class="text-xs font-bold text-amber-400">#${idx + 1} - ${b.location_name}</span>
-                                            <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold">RESOLVED</span>
+                                            <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold">RESOLVED BY YOU</span>
                                         </div>
                                         <p class="text-[11px] text-slate-300">${b.notes || 'No notes'}</p>
                                     </div>
@@ -693,6 +865,24 @@ def serve_frontend():
                 document.getElementById('otp-hint').innerText = `[SIMULATED SMS/MAIL OTP]: ${generatedOTP}`;
             }
 
+            async function resendOTP() {
+                if (!tempRegData.email || !tempRegData.mobile) return;
+                generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
+                await fetch('/auth/request-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: tempRegData.email, mobile: tempRegData.mobile, otp: generatedOTP })
+                });
+                document.getElementById('reg-otp').value = '';
+                document.getElementById('otp-hint').innerText = `[RESENT SMS/MAIL OTP]: ${generatedOTP}`;
+                alert(`A new 6-digit OTP has been dispatched: ${generatedOTP}`);
+            }
+
+            function backToRegStep1() {
+                document.getElementById('reg-step-2').classList.add('hidden');
+                document.getElementById('reg-step-1').classList.remove('hidden');
+            }
+
             async function verifyAndRegister() {
                 const enteredOTP = document.getElementById('reg-otp').value;
                 const errDiv = document.getElementById('reg-error');
@@ -738,13 +928,26 @@ def serve_frontend():
                 document.getElementById('dashboard').classList.remove('hidden');
                 document.getElementById('user-badge').innerText = authToken;
 
-                if (authToken.toUpperCase() === 'TN-ADMIN-01') {
+                const isAdmin = authToken.toUpperCase() === 'TN-ADMIN-01';
+                const logHeading = document.getElementById('wireless-log-heading');
+                if (isAdmin) {
                     document.getElementById('admin-panel').classList.remove('hidden');
+                    document.getElementById('admin-action-btns').classList.remove('hidden');
+                    document.getElementById('btn-clear-resolved').classList.remove('hidden');
+                    document.getElementById('menu-my-clearances').classList.add('hidden');
+                    logHeading.innerHTML = `<i class="fa-solid fa-walkie-talkie text-red-400 mr-1.5"></i>Control Room Master Wireless & Telemetry Log`;
                     loadAdminPanelData();
+                } else {
+                    document.getElementById('admin-panel').classList.add('hidden');
+                    document.getElementById('admin-action-btns').classList.add('hidden');
+                    document.getElementById('btn-clear-resolved').classList.add('hidden');
+                    document.getElementById('menu-my-clearances').classList.remove('hidden');
+                    logHeading.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-400 mr-1.5"></i>Officer Blockade & Congestion Alert Feed`;
                 }
 
                 setTimeout(() => {
                     initMap();
+                    checkMyProfileStatus();
                     loadBlockades();
                     loadNotifications();
                 }, 100);
@@ -754,17 +957,18 @@ def serve_frontend():
                 try {
                     const offRes = await fetch('/admin/officers', { headers: { 'Authorization': 'Bearer ' + authToken } });
                     if (offRes.ok) {
-                        const officers = await offRes.json();
+                        cachedOfficers = await offRes.json();
                         const offContainer = document.getElementById('admin-officers-list');
                         offContainer.innerHTML = '';
-                        officers.forEach(o => {
+                        cachedOfficers.forEach(o => {
                             let badgeStyle = o.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400';
                             offContainer.innerHTML += `
                                 <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
                                     <div><strong>${o.name}</strong> (${o.badge_number})<br><span class="text-[10px] text-slate-400">${o.email} • ${o.mobile}</span></div>
-                                    <div class="flex items-center gap-2">
+                                    <div class="flex items-center gap-1.5">
                                         <span class="text-[10px] px-2 py-0.5 rounded font-bold ${badgeStyle}">${o.status}</span>
                                         ${o.status === 'PENDING APPROVAL' ? `<button onclick="approveOfficer('${o.badge_number}')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] px-2 py-1 rounded cursor-pointer">Approve</button>` : ''}
+                                        <button onclick="openAdminEditModal('${o.badge_number}')" class="bg-blue-600/40 hover:bg-blue-600 border border-blue-400/40 text-blue-200 text-[10px] px-2 py-1 rounded cursor-pointer"><i class="fa-solid fa-pen"></i> Edit</button>
                                     </div>
                                 </div>
                             `;
@@ -826,12 +1030,16 @@ def serve_frontend():
             }
 
             async function simulateAITrigger() {
-                await fetch('/blockades/simulate-ai', {
+                const res = await fetch('/blockades/simulate-ai', {
                     method: 'POST',
                     headers: { 'Authorization': 'Bearer ' + authToken }
                 });
-                loadBlockades();
-                loadNotifications();
+                if (res.ok) {
+                    loadBlockades();
+                    loadNotifications();
+                } else {
+                    alert('Unauthorized: Only Central Command Admin can simulate AI hazards.');
+                }
             }
 
             async function loadBlockades() {
@@ -842,6 +1050,7 @@ def serve_frontend():
                 container.innerHTML = '';
 
                 if (markersLayer) markersLayer.clearLayers();
+                const isAdmin = authToken.toUpperCase() === 'TN-ADMIN-01';
 
                 data.slice().reverse().forEach(b => {
                     const isResolved = b.status === 'RESOLVED';
@@ -857,6 +1066,19 @@ def serve_frontend():
                             <img src="${b.clearance_photo}" class="w-full h-20 object-cover rounded">
                         </div>` : '';
 
+                    let actionBtnsHtml = '';
+                    if (!isAdmin) {
+                        if (currentUserStatus !== 'ACTIVE') {
+                            actionBtnsHtml = `<span class="text-[10px] text-amber-400 font-semibold">⏳ Pending Admin Approval</span>`;
+                        } else {
+                            if (b.status === 'ACTIVE') actionBtnsHtml = `<button onclick="assignUnit(${b.id})" class="bg-blue-700/40 hover:bg-blue-700/60 border border-blue-400/30 text-blue-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Dispatch</button>`;
+                            if (b.status === 'ASSIGNED') actionBtnsHtml = `<button onclick="markArrived(${b.id})" class="bg-amber-700/40 hover:bg-amber-700/60 border border-amber-400/30 text-amber-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Arrived</button>`;
+                            if (b.status === 'ARRIVED') actionBtnsHtml = `<button onclick="openPhotoModal(${b.id})" class="bg-emerald-700/40 hover:bg-emerald-700/60 border border-emerald-400/30 text-emerald-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Live Camera Clear</button>`;
+                        }
+                    } else {
+                        actionBtnsHtml = `<span class="text-[10px] text-slate-500 italic">Supervisor View</span>`;
+                    }
+
                     container.innerHTML += `
                         <div class="bg-[#070e1c] border ${isResolved ? 'border-emerald-500/40' : 'border-amber-500/25'} p-3 rounded-lg space-y-2">
                             <div class="flex justify-between items-start">
@@ -870,11 +1092,7 @@ def serve_frontend():
                             ${clearanceHtml}
                             <div class="flex justify-between items-center pt-1 border-t border-slate-800/80">
                                 <span class="text-[11px] text-slate-400">Status: <strong class="${isResolved ? 'text-emerald-400' : 'text-amber-300'}">${b.status}</strong></span>
-                                <div class="space-x-1.5 flex items-center">
-                                    ${b.status === 'ACTIVE' ? `<button onclick="assignUnit(${b.id})" class="bg-blue-700/40 hover:bg-blue-700/60 border border-blue-400/30 text-blue-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Dispatch</button>` : ''}
-                                    ${b.status === 'ASSIGNED' ? `<button onclick="markArrived(${b.id})" class="bg-amber-700/40 hover:bg-amber-700/60 border border-amber-400/30 text-amber-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Arrived</button>` : ''}
-                                    ${b.status === 'ARRIVED' ? `<button onclick="openPhotoModal(${b.id})" class="bg-emerald-700/40 hover:bg-emerald-700/60 border border-emerald-400/30 text-emerald-200 text-[11px] px-2.5 py-0.5 rounded transition cursor-pointer">Live Camera Clear</button>` : ''}
-                                </div>
+                                <div class="space-x-1.5 flex items-center">${actionBtnsHtml}</div>
                             </div>
                         </div>`;
 
@@ -911,6 +1129,7 @@ def serve_frontend():
 
             async function loadNotifications() {
                 const res = await fetch('/notifications/', { headers: { 'Authorization': 'Bearer ' + authToken } });
+                if (!res.ok) return;
                 const data = await res.json();
                 const box = document.getElementById('notification-box');
                 if (!box) return;
@@ -931,12 +1150,20 @@ def serve_frontend():
             }
 
             async function assignUnit(id) {
-                await fetch('/blockades/' + id + '/assign', { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
+                const res = await fetch('/blockades/' + id + '/assign', { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
+                if (!res.ok) {
+                    const err = await res.json();
+                    alert(err.detail || 'Action restricted.');
+                }
                 loadBlockades(); loadNotifications();
             }
 
             async function markArrived(id) {
-                await fetch('/blockades/' + id + '/arrived', { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
+                const res = await fetch('/blockades/' + id + '/arrived', { method: 'POST', headers: { 'Authorization': 'Bearer ' + authToken } });
+                if (!res.ok) {
+                    const err = await res.json();
+                    alert(err.detail || 'Action restricted.');
+                }
                 loadBlockades(); loadNotifications();
             }
 
@@ -969,13 +1196,16 @@ def serve_frontend():
                         body: formData
                     });
 
-                    if (!res.ok) throw new Error('Failed to upload clearance photo');
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || 'Failed to upload clearance photo');
+                    }
 
                     closePhotoModal();
                     loadBlockades();
                     loadNotifications();
                 } catch (err) {
-                    alert('Error uploading photo: ' + err.message);
+                    alert('Error: ' + err.message);
                 }
             }
 
@@ -990,7 +1220,6 @@ def serve_frontend():
     </html>
     """
 
-# --- AUTHENTICATION ENDPOINTS ---
 @app.post("/auth/register", tags=["Authentication"])
 def register_officer(reg: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(
@@ -1021,7 +1250,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         raise HTTPException(status_code=401, detail="Incorrect badge ID or password")
     return {"access_token": user.username, "token_type": "bearer"}
 
-# --- ADMIN CONTROL ENDPOINTS ---
 @app.get("/admin/officers", tags=["Admin Control"])
 def get_admin_officers(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     if token.upper() != "TN-ADMIN-01":
@@ -1040,7 +1268,23 @@ def approve_officer(badge_number: str, token: str = Depends(oauth2_scheme), db: 
     db.commit()
     return {"message": f"Officer {badge_number} approved"}
 
-# --- OFFICER PROFILE ENDPOINTS ---
+@app.put("/admin/officers/{badge_number}", tags=["Admin Control"])
+def admin_edit_officer(badge_number: str, payload: AdminEditOfficerRequest, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    if token.upper() != "TN-ADMIN-01":
+        raise HTTPException(status_code=403, detail="Only Central Command Admin can edit officer accounts.")
+    officer = db.query(User).filter(User.badge_number == badge_number).first()
+    if not officer:
+        raise HTTPException(status_code=404, detail="Officer not found")
+    officer.name = payload.name
+    officer.email = payload.email
+    officer.mobile = payload.mobile
+    officer.status = payload.status
+    if payload.password and payload.password.strip() != "":
+        officer.password = payload.password.strip()
+    db.add(Notification(message=f"[ADMIN PROFILE EDIT] Supervisor updated profile/status for Officer {badge_number} ({officer.status})."))
+    db.commit()
+    return {"message": "Officer profile updated by Admin", "status": officer.status}
+
 @app.get("/api/profile", tags=["Officer Profile"])
 def get_profile(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == token).first()
@@ -1088,20 +1332,23 @@ async def update_profile(
 
 @app.get("/api/my-clearances", tags=["Officer Profile"])
 def get_my_clearances(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    if token.upper() == "TN-ADMIN-01":
+        return []
     clearances = db.query(Blockade).filter(
         Blockade.status == "RESOLVED",
         Blockade.resolved_by == token
     ).order_by(Blockade.id.desc()).limit(10).all()
     return clearances
 
-# --- BLOCKADE & TELEMETRY ENDPOINTS ---
 @app.head("/blockades/", tags=["Tactical Blockades"])
 @app.get("/blockades/", tags=["Tactical Blockades"])
 def get_blockades(db: Session = Depends(get_db)):
     return db.query(Blockade).all()
 
 @app.post("/blockades/reset-all", tags=["Tactical Blockades"])
-def reset_all_blockades(db: Session = Depends(get_db)):
+def reset_all_blockades(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    if token.upper() != "TN-ADMIN-01":
+        raise HTTPException(status_code=403, detail="Only Central Command Admin can reset and spawn blockades.")
     db.query(Blockade).delete()
     db.add(Blockade(
         location_name="Kumbakonam Bypass Junction - Sector 2",
@@ -1112,7 +1359,7 @@ def reset_all_blockades(db: Session = Depends(get_db)):
         notes="Multi-vehicle collision blocking north lane",
         image_url="https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=400&q=80"
     ))
-    db.add(Notification(message="[SYSTEM RESET] All old incidents wiped. Fresh ACTIVE incident spawned."))
+    db.add(Notification(message="[SYSTEM RESET] Admin wiped old incidents. Fresh ACTIVE incident spawned."))
     db.commit()
     return {"message": "Database reset successfully. All incidents set to active."}
 
@@ -1146,6 +1393,8 @@ def trigger_from_project_model(payload: EdgeModelTrigger, db: Session = Depends(
 
 @app.post("/blockades/simulate-ai", tags=["Edge-AI Simulation"])
 def simulate_ai_trigger(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    if token.upper() != "TN-ADMIN-01":
+        raise HTTPException(status_code=403, detail="Only Central Command Admin can simulate AI hazards.")
     samples = [
         ("Mahamaham Tank West Gate", 10.9576, 79.3789, "CRITICAL", "YOLO-v8 Edge Cam: Crowd surge & road obstruction detected", "https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=400&q=80"),
         ("Mayiladuthurai State Highway", 11.1018, 79.6524, "HIGH", "AI Acoustic Sensor: Emergency vehicle bottleneck", "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=400&q=80"),
@@ -1158,8 +1407,19 @@ def simulate_ai_trigger(token: str = Depends(oauth2_scheme), db: Session = Depen
     db.commit()
     return new_b
 
+def verify_active_field_officer(token: str, db: Session):
+    if token.upper() == "TN-ADMIN-01":
+        raise HTTPException(status_code=403, detail="Admin Supervisor does not perform field dispatch or clearance actions.")
+    user = db.query(User).filter(User.username == token).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Officer account not found.")
+    if user.status != "ACTIVE":
+        raise HTTPException(status_code=403, detail="Your account is PENDING APPROVAL by Central Command Admin. Field actions are locked.")
+    return user
+
 @app.post("/blockades/{blockade_id}/assign", tags=["Tactical Blockades"])
 def assign_blockade(blockade_id: int, payload: Optional[dict] = None, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    verify_active_field_officer(token, db)
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b:
         raise HTTPException(status_code=404, detail="Blockade not found")
@@ -1176,6 +1436,7 @@ def assign_blockade(blockade_id: int, payload: Optional[dict] = None, token: str
 
 @app.post("/blockades/{blockade_id}/arrived", tags=["Tactical Blockades"])
 def mark_arrived(blockade_id: int, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    verify_active_field_officer(token, db)
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b:
         raise HTTPException(status_code=404, detail="Blockade not found")
@@ -1188,6 +1449,7 @@ def mark_arrived(blockade_id: int, token: str = Depends(oauth2_scheme), db: Sess
 
 @app.post("/blockades/{blockade_id}/telemetry", tags=["Officer Tracking"])
 def update_officer_telemetry(blockade_id: int, data: TelemetryUpdate, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    verify_active_field_officer(token, db)
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b:
         raise HTTPException(status_code=404, detail="Blockade not found")
@@ -1198,6 +1460,7 @@ def update_officer_telemetry(blockade_id: int, data: TelemetryUpdate, token: str
 
 @app.post("/blockades/{blockade_id}/resolve-photo", tags=["Tactical Blockades"])
 async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    verify_active_field_officer(token, db)
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b:
         raise HTTPException(status_code=404, detail="Blockade not found")
@@ -1216,6 +1479,7 @@ async def resolve_with_photo(blockade_id: int, file: UploadFile = File(...), tok
 
 @app.post("/blockades/{blockade_id}/resolve-photo-base64", tags=["Tactical Blockades"])
 def resolve_with_photo_base64(blockade_id: int, payload: dict, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    verify_active_field_officer(token, db)
     b = db.query(Blockade).filter(Blockade.id == blockade_id).first()
     if not b:
         raise HTTPException(status_code=404, detail="Blockade not found")
@@ -1233,10 +1497,24 @@ def resolve_with_photo_base64(blockade_id: int, payload: dict, token: str = Depe
 
 @app.delete("/blockades/clear-resolved", tags=["Tactical Blockades"])
 def clear_resolved(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    if token.upper() != "TN-ADMIN-01":
+        raise HTTPException(status_code=403, detail="Only Admin can clear resolved records.")
     deleted = db.query(Blockade).filter(Blockade.status == "RESOLVED").delete()
     db.commit()
     return {"deleted": deleted}
 
 @app.get("/notifications/", tags=["Notifications"])
 def get_notifications(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    return db.query(Notification).all()
+    all_notifs = db.query(Notification).all()
+    # Control Room Admin receives ALL system notifications
+    if token.upper() == "TN-ADMIN-01":
+        return all_notifs
+    # Field Officers ONLY receive active Blockade & Congestion hazard alerts
+    officer_alerts = [
+        n for n in all_notifs
+        if ("[LIVE YOLO MODEL ALERT]" in (n.message or ""))
+        or ("[EDGE-AI YOLO]" in (n.message or ""))
+        or ("[SIMULATED AI]" in (n.message or ""))
+        or ("[YOLO AI]" in (n.message or ""))
+    ]
+    return officer_alerts
